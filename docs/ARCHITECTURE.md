@@ -2,7 +2,7 @@
 
 ## Scope
 
-PHM is a customer and commerce platform for a Pelican-based hosting business. It supports both paid hosting and privately assigned servers. The commercial model uses exactly one prepaid wallet per customer.
+PHM is a customer and commerce platform for a Pelican-based hosting business. It supports paid hosting and privately assigned servers. The commercial model uses exactly one prepaid wallet per customer.
 
 ## System boundaries
 
@@ -14,18 +14,20 @@ PHM is a customer and commerce platform for a Pelican-based hosting business. It
 ## Initial stack
 
 - FastAPI + SQLAlchemy 2 async
-- PostgreSQL
+- PostgreSQL + Alembic migrations
 - Redis for future background jobs
 - React + TypeScript frontend (future milestone)
 - Docker Compose for development and deployment
 
 ## Wallet model
 
-Each customer has one row in `wallets`, enforced by a unique `customer_id`. The balance is an integer number of EUR cents. Every mutation creates an immutable `wallet_transactions` row and updates the cached balance in the same database transaction.
+Each customer has exactly one row in `wallets`, enforced by a unique `customer_id`. The balance is an integer number of EUR cents. Every mutation creates an immutable `wallet_transactions` row and updates the cached balance in the same database transaction.
 
-Transaction types initially include `topup`, `purchase`, `refund`, and `admin_adjustment`. Debits must not make the balance negative. Idempotency keys prevent duplicate credits/debits. Wallet writes lock the wallet row with `SELECT ... FOR UPDATE`.
+Ledger amounts are signed: top-ups and refunds are positive credits; purchases are negative debits; admin adjustments may be positive or negative. Database constraints reject zero amounts, unsupported transaction types, invalid transaction directions, negative resulting balances, and non-EUR wallets.
 
-No separate balances, bonus wallets, or payment-method-specific balances are permitted.
+The unique key `(wallet_id, idempotency_key)` prevents duplicate mutations. Reusing a key with an identical payload returns the original entry; reusing it with a different payload raises an explicit conflict. PostgreSQL row-level locking serializes mutations to a wallet.
+
+No separate balances, bonus wallets, or payment-method-specific balances are permitted. A pending payment is not a wallet credit.
 
 ## Security requirements
 
@@ -53,6 +55,6 @@ No separate balances, bonus wallets, or payment-method-specific balances are per
 
 A paid order is created as pending. PHM reserves/debits the wallet atomically when the order is confirmed, then dispatches a provisioning job. The job creates or assigns the Pelican server using the least-privileged server-side credential. The operation is idempotent and records the Pelican server identifier. Failures are retried or compensated through an explicit refund ledger entry; balance changes are never silently deleted.
 
-## Status
+## Current implementation
 
-The repository currently contains the Phase 1 backend foundation and wallet domain primitives. Authentication, provider verification, UI, Pelican provisioning, and production deployment hardening remain future milestones.
+The repository currently contains the initial signed wallet ledger, the Alembic schema revision, wallet-domain tests, and a GitHub Actions workflow that runs linting, tests, and a PostgreSQL migration check. Authentication, provider verification, UI, Pelican provisioning, and production deployment hardening remain future milestones.
