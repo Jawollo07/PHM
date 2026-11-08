@@ -1,12 +1,11 @@
 from sqlalchemy import select
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.models import Wallet, WalletTransaction, WalletTransactionType
 
 
 class WalletError(Exception):
-    pass
+    """Base class for expected wallet-domain errors."""
 
 
 class WalletNotFound(WalletError):
@@ -21,15 +20,16 @@ class InvalidWalletMutation(WalletError):
     pass
 
 
+class IdempotencyConflict(WalletError):
+    pass
+
+
 async def create_wallet(session: AsyncSession, customer_id: int) -> Wallet:
     if customer_id <= 0:
         raise InvalidWalletMutation("customer_id must be positive")
     wallet = Wallet(customer_id=customer_id, currency="EUR", balance_cents=0)
     session.add(wallet)
-    try:
-        await session.flush()
-    except IntegrityError as exc:
-        raise InvalidWalletMutation("customer already has a wallet") from exc
+    await session.flush()
     return wallet
 
 
@@ -43,22 +43,36 @@ async def mutate_wallet(
     description: str,
     reference: str | None = None,
 ) -> WalletTransaction:
-    """Apply one ledger mutation. Positive amount credits; negative amount debits.
+    """Apply one signed ledger entry inside the caller's DB transaction.
 
-    Caller owns the surrounding database transaction. The row lock serializes
-    concurrent changes to the same wallet on PostgreSQL.
+    PostgreSQL's row lock serializes all mutations for a wallet. The unique
+    (wallet_id, idempotency_key) constraint is the final concurrency guard.
+    Reusing a key with a different payload is rejected rather than silently
+    returning an unrelated previous transaction.
     """
-    if amount_cents == 0:
-        raise InvalidWalletMutation("amount_cents must not be zero")
+    if customer_id <= 0:
+        raise InvalidWalletMutation("customer_id must be positive")
+    if not isinstance(transaction_type, WalletTransactionType):
+        raise InvalidWalletMutation("unsupported transaction type")
+    if not isinstance(amount_cents, int) or isinstance(amount_cents, bool) or amount_cents == 0:
+        raise InvalidWalletMutation("amount_cents must be a non-zero integer")
     if not idempotency_key or len(idempotency_key) > 128:
         raise InvalidWalletMutation("a valid idempotency key is required")
     if not description or len(description) > 255:
         raise InvalidWalletMutation("a description of 1-255 characters is required")
+    if reference is not None and len(reference) > 128:
+        raise InvalidWalletMutation("reference must be at most 128 characters")
 
-    wallet_result = await session.execute(
+    if transaction_type in (WalletTransactionType.TOPUP, WalletTransactionType.REFUND):
+        if amount_cents < 0:
+            raise InvalidWalletMutation(f"{transaction_type.value} must be a credit")
+    elif transaction_type == WalletTransactionType.PURCHASE and amount_cents > 0:
+        raise InvalidWalletMutation("purchase must be a debit")
+
+    result = await session.execute(
         select(Wallet).where(Wallet.customer_id == customer_id).with_for_update()
     )
-    wallet = wallet_result.scalar_one_or_none()
+    wallet = result.scalar_one_or_none()
     if wallet is None:
         raise WalletNotFound("wallet does not exist")
 
@@ -70,30 +84,30 @@ async def mutate_wallet(
     )
     existing = existing_result.scalar_one_or_none()
     if existing is not None:
+        same_request = (
+            existing.transaction_type == transaction_type.value
+            and existing.amount_cents == amount_cents
+            and existing.description == description
+            and existing.reference == reference
+        )
+        if not same_request:
+            raise IdempotencyConflict("idempotency key was already used with another payload")
         return existing
 
-    if amount_cents < 0 and wallet.balance_cents + amount_cents < 0:
+    new_balance = wallet.balance_cents + amount_cents
+    if new_balance < 0:
         raise InsufficientFunds("wallet balance is insufficient")
 
-    if transaction_type == WalletTransactionType.TOPUP and amount_cents < 0:
-        raise InvalidWalletMutation("topups must be credits")
-    if transaction_type == WalletTransactionType.PURCHASE and amount_cents > 0:
-        raise InvalidWalletMutation("purchases must be debits")
-
-    wallet.balance_cents += amount_cents
+    wallet.balance_cents = new_balance
     entry = WalletTransaction(
         wallet_id=wallet.id,
         transaction_type=transaction_type.value,
-        amount_cents=abs(amount_cents),
-        balance_after_cents=wallet.balance_cents,
+        amount_cents=amount_cents,
+        balance_after_cents=new_balance,
         idempotency_key=idempotency_key,
         reference=reference,
         description=description,
     )
-    # Keep sign separately in the transaction type: ledger amount is positive
-    # magnitude, and type determines whether it is a credit or debit.
-    if amount_cents < 0:
-        entry.transaction_type = f"{transaction_type.value}_debit"
     session.add(entry)
     await session.flush()
     return entry
