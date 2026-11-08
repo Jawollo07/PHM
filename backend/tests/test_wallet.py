@@ -2,6 +2,7 @@ import asyncio
 
 import pytest
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from backend.app.models import Base, Wallet, WalletTransaction, WalletTransactionType
@@ -31,7 +32,7 @@ def test_wallet_is_unique_per_customer():
                     await create_wallet(session, 42)
             async with sessions() as session:
                 async with session.begin():
-                    with pytest.raises(Exception):
+                    with pytest.raises(IntegrityError):
                         await create_wallet(session, 42)
         finally:
             await engine.dispose()
