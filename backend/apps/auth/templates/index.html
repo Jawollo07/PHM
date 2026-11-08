@@ -1,0 +1,11 @@
+{% if error %}
+    <p role="alert">{{ error }}</p>
+{% endif %}
+<form action="{% url 'login' %}" method="post">
+    {% csrf_token %}
+    <label for="username">Benutzername</label>
+    <input id="username" type="text" name="username" autocomplete="username" required>
+    <label for="password">Passwort</label>
+    <input id="password" type="password" name="password" autocomplete="current-password" required>
+    <button type="submit">Anmelden</button>
+</form>
