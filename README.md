@@ -8,8 +8,8 @@ PHM supports commercial game-server hosting and privately assigned servers. Ever
 
 ## Architecture
 
-- Backend: FastAPI (Python)
-- Database: PostgreSQL
+- Backend: FastAPI (Python 3.12+)
+- Database: PostgreSQL (SQLAlchemy 2 + Alembic)
 - Background jobs: Redis + worker (planned)
 - Frontend: React + TypeScript (planned)
 - Pelican integration: server-side adapter using Pelican's documented API
@@ -17,15 +17,42 @@ PHM supports commercial game-server hosting and privately assigned servers. Ever
 
 ## Wallet invariants
 
-1. One wallet per customer.
-2. Balances are stored as integer cents (EUR), never floating point.
-3. All wallet mutations are immutable ledger entries.
-4. Credits are only applied after verified payment confirmation or an audited admin adjustment.
-5. Debits are atomic and cannot overdraw the wallet.
-6. External payment events are idempotent.
+1. Exactly one wallet per customer, enforced by a database uniqueness constraint.
+2. Balances are integer EUR cents; floating-point money is never used.
+3. Every mutation creates an immutable ledger row and updates the cached balance in the same DB transaction.
+4. Ledger amounts are signed: credits are positive, debits are negative.
+5. Top-ups and refunds must be credits; purchases must be debits. Admin adjustments may go either way.
+6. Debits cannot overdraw the wallet.
+7. A repeated idempotency key with the same payload returns the original transaction; a different payload is rejected.
+8. Payment-provider funds are credited only after server-side verification. Pending top-ups are not spendable.
+
+There are no separate balances for payment methods, products, subscriptions, or promotions.
+
+## Local development
+
+Requirements: Python 3.12+ and PostgreSQL 16+.
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+python -m pip install -e ".[dev]"
+export DATABASE_URL="postgresql+asyncpg://phm:change-me@localhost:5432/phm"
+alembic upgrade head
+uvicorn backend.app.main:app --reload
+```
+
+Run checks:
+
+```bash
+ruff check backend
+pytest -q
+alembic upgrade head
+```
+
+For a local database, `docker compose up -d db` starts PostgreSQL. Set a strong `POSTGRES_PASSWORD` in the environment before using Compose outside a disposable local environment.
 
 ## Development status
 
-This repository is being initialized. The first implementation milestone is the backend foundation and wallet ledger. Payment-provider integrations, the customer UI, provisioning, and native Pelican UI integration are added in later milestones.
+The initial single-wallet ledger, signed transaction semantics, Alembic schema migration, wallet tests, and GitHub Actions CI are in place. Authentication, payment-provider verification, customer UI, Pelican provisioning, and production deployment hardening remain future milestones.
 
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/ROADMAP.md](docs/ROADMAP.md).
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), [docs/ROADMAP.md](docs/ROADMAP.md), and [docs/MASTER_PLAN.md](docs/MASTER_PLAN.md).
