@@ -1,4 +1,4 @@
-from django.contrib.auth import authenticate, login as auth_login
+from django.contrib.auth import authenticate, login as auth_login, logout
 from django.contrib.auth.decorators import login_required
 from django.http import HttpResponse, HttpResponseNotAllowed
 from django.shortcuts import redirect, render
@@ -28,6 +28,9 @@ def login(request):
         )
     auth_login(request, user)
     return redirect('login_test')
+def log_out(request):
+    logout(request)
+    return redirect('index')
 
 @login_required(login_url='auth')
 def site(request):
