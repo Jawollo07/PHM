@@ -1,6 +1,7 @@
 import uuid
 
 from django.db import migrations, models
+from django.core.validators import MinValueValidator
 from django.db.models import Q
 import django.db.models.deletion
 import django.utils.timezone
@@ -30,7 +31,7 @@ class Migration(migrations.Migration):
             fields=[
                 ("id", models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)),
                 ("currency", models.CharField(default="EUR", editable=False, max_length=3)),
-                ("balance_cents", models.BigIntegerField(default=0)),
+                ("balance_cents", models.BigIntegerField(default=0, validators=[MinValueValidator(0)])),
                 ("created_at", models.DateTimeField(auto_now_add=True)),
                 ("updated_at", models.DateTimeField(auto_now=True)),
                 ("customer", models.OneToOneField(on_delete=django.db.models.deletion.PROTECT, related_name="wallet", to="customers.customer")),
@@ -68,7 +69,7 @@ class Migration(migrations.Migration):
                 ("sequence_number", models.PositiveBigIntegerField()),
                 ("type", models.CharField(choices=[("topup", "Top-up"), ("purchase", "Purchase"), ("refund", "Refund"), ("admin_adjustment", "Admin Adjustment")], max_length=30)),
                 ("amount_cents", models.BigIntegerField()),
-                ("balance_after_cents", models.BigIntegerField()),
+                ("balance_after_cents", models.BigIntegerField(validators=[MinValueValidator(0)])),
                 ("description", models.CharField(max_length=255)),
                 ("idempotency_key", models.CharField(max_length=128)),
                 ("reference", models.CharField(blank=True, default="", max_length=255)),
@@ -92,7 +93,7 @@ class Migration(migrations.Migration):
             name="WalletHold",
             fields=[
                 ("id", models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)),
-                ("amount_cents", models.PositiveBigIntegerField()),
+                ("amount_cents", models.PositiveBigIntegerField(validators=[MinValueValidator(1)])),
                 ("status", models.CharField(choices=[("active", "Active"), ("captured", "Captured"), ("released", "Released"), ("expired", "Expired")], default="active", max_length=20)),
                 ("idempotency_key", models.CharField(max_length=128)),
                 ("reference", models.CharField(blank=True, default="", max_length=255)),
