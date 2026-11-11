@@ -241,7 +241,7 @@ def capture_hold(hold_id, *, signing_key_id, signer: Signer) -> WalletTransactio
         signing_key=signing_key,
         signer=signer,
         reference=hold.reference,
-        metadata={"hold_id": str(hold.pk), **hold.metadata},
+        metadata={**hold.metadata, "hold_id": str(hold.pk)},
     )
     hold.status = WalletHold.Status.CAPTURED
     hold.captured_transaction = entry
