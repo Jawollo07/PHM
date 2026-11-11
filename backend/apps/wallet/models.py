@@ -114,6 +114,9 @@ class Wallet(models.Model):
             - self.reserved_balance_cents
         )
 
+    def delete(self, *args, **kwargs):
+        raise TypeError("Wallets cannot be deleted; archive the customer instead.")
+
     def __str__(self):
         return f"Wallet {self.id}"
 
@@ -453,6 +456,8 @@ class WalletHold(models.Model):
         auto_now=True,
     )
 
+    objects = ImmutableManager()
+
     class Meta:
         db_table = "wallet_holds"
         verbose_name = "Wallet Hold"
@@ -492,6 +497,29 @@ class WalletHold(models.Model):
                 name="wallet_hold_expiry_idx",
             ),
         ]
+
+    def save(self, *args, **kwargs):
+        if not self._state.adding:
+            original = type(self).objects.get(pk=self.pk)
+            immutable_fields = (
+                "wallet_id", "amount_cents", "idempotency_key",
+                "reference", "expires_at", "metadata", "created_at",
+            )
+            if any(getattr(original, field) != getattr(self, field) for field in immutable_fields):
+                raise TypeError("Wallet hold terms cannot be changed.")
+            if original.status == self.status:
+                if original.captured_transaction_id != self.captured_transaction_id:
+                    raise TypeError("A captured transaction can only be set while capturing a hold.")
+            elif original.status != self.Status.ACTIVE or self.status not in (
+                self.Status.CAPTURED, self.Status.RELEASED, self.Status.EXPIRED
+            ):
+                raise TypeError("Invalid wallet hold state transition.")
+            if self.status == self.Status.CAPTURED and not self.captured_transaction_id:
+                raise TypeError("A captured hold must reference its ledger transaction.")
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise TypeError("Wallet holds cannot be deleted.")
 
     def __str__(self):
         return (
