@@ -9,6 +9,14 @@ import django.utils.timezone
 GENESIS_HASH = "0" * 64
 
 
+def create_existing_wallets(apps, schema_editor):
+    database = schema_editor.connection.alias
+    Customer = apps.get_model("customers", "Customer")
+    Wallet = apps.get_model("wallet", "Wallet")
+    for customer in Customer.objects.using(database).iterator():
+        Wallet.objects.using(database).get_or_create(customer_id=customer.pk)
+
+
 class Migration(migrations.Migration):
     initial = True
 
@@ -193,4 +201,5 @@ class Migration(migrations.Migration):
             model_name="wallethold",
             index=models.Index(fields=["status", "expires_at"], name="wallet_hold_expiry_idx"),
         ),
+        migrations.RunPython(create_existing_wallets, migrations.RunPython.noop),
     ]
