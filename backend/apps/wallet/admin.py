@@ -24,6 +24,9 @@ class WalletAdmin(admin.ModelAdmin):
 
 @admin.register(WalletHold)
 class WalletHoldAdmin(admin.ModelAdmin):
+    def has_view_permission(self, request, obj=None):
+        return request.user.is_active and request.user.is_staff
+
     list_display = ("id", "wallet", "amount_cents", "status", "expires_at")
     list_filter = ("status",)
     readonly_fields = tuple(field.name for field in WalletHold._meta.fields)
@@ -40,6 +43,9 @@ class WalletHoldAdmin(admin.ModelAdmin):
 
 @admin.register(WalletTransaction)
 class WalletTransactionAdmin(admin.ModelAdmin):
+    def has_view_permission(self, request, obj=None):
+        return request.user.is_active and request.user.is_staff
+
     list_display = ("wallet", "sequence_number", "type", "amount_cents", "created_at")
     list_filter = ("type",)
     search_fields = ("entry_hash", "idempotency_key", "reference")
@@ -57,6 +63,9 @@ class WalletTransactionAdmin(admin.ModelAdmin):
 
 @admin.register(LedgerSigningKey)
 class LedgerSigningKeyAdmin(admin.ModelAdmin):
+    def has_view_permission(self, request, obj=None):
+        return request.user.is_active and request.user.is_staff
+
     list_display = ("key_id", "label", "algorithm", "status", "created_at")
     list_filter = ("algorithm", "status")
     readonly_fields = tuple(field.name for field in LedgerSigningKey._meta.fields)
@@ -73,6 +82,9 @@ class LedgerSigningKeyAdmin(admin.ModelAdmin):
 
 @admin.register(LedgerCheckpoint)
 class LedgerCheckpointAdmin(admin.ModelAdmin):
+    def has_view_permission(self, request, obj=None):
+        return request.user.is_active and request.user.is_staff
+
     list_display = ("checkpoint_number", "transaction_count", "wallet_count", "created_at")
     readonly_fields = tuple(field.name for field in LedgerCheckpoint._meta.fields)
 
