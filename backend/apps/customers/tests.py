@@ -40,6 +40,9 @@ class AccountViewTests(TestCase):
         self.assertContains(response, '0123456789')
 
     def test_account_page_updates_user_customer_and_settings(self):
+        self.user.email_verified = True
+        self.user.email_verified_at = __import__('django.utils.timezone', fromlist=['now']).now()
+        self.user.save(update_fields=['email_verified', 'email_verified_at'])
         response = self.client.post(
             '/account/',
             {
@@ -65,6 +68,8 @@ class AccountViewTests(TestCase):
         self.user.refresh_from_db()
         self.assertEqual(self.user.username, 'updated-user')
         self.assertEqual(self.user.email, 'updated@example.com')
+        self.assertFalse(self.user.email_verified)
+        self.assertIsNone(self.user.email_verified_at)
 
         customer = Customer.objects.get(user=self.user)
         self.assertEqual(customer.phone_number, '0123456789')
