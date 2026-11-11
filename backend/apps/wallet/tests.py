@@ -62,3 +62,85 @@ class WalletModelTests(TestCase):
             WalletTransaction.objects.filter(pk=entry.pk).update(description="Changed")
         with self.assertRaises(TypeError):
             entry.delete()
+
+
+class WalletServiceTests(TestCase):
+    def setUp(self):
+        from apps.wallet.models import LedgerSigningKey
+
+        self.user = get_user_model().objects.create_user(
+            username="service-user",
+            email="service@example.com",
+            password="secure-test-password",
+        )
+        self.wallet = self.user.customer.wallet
+        self.key = LedgerSigningKey.objects.create(
+            key_id="service-key",
+            label="Service test key",
+            public_key=b"public-key",
+            fingerprint="c" * 64,
+        )
+        self.signer = lambda payload: b"test-signature"
+
+    def test_credit_is_idempotent(self):
+        from apps.wallet.services import credit_wallet
+
+        kwargs = {
+            "description": "Manual test top-up",
+            "idempotency_key": "service-credit-1",
+            "signing_key_id": self.key.pk,
+            "signer": self.signer,
+        }
+        first = credit_wallet(self.wallet.pk, 1000, **kwargs)
+        second = credit_wallet(self.wallet.pk, 1000, **kwargs)
+
+        self.wallet.refresh_from_db()
+        self.assertEqual(first.pk, second.pk)
+        self.assertEqual(self.wallet.balance_cents, 1000)
+        self.assertEqual(self.wallet.transactions.count(), 1)
+
+    def test_debit_cannot_spend_reserved_funds(self):
+        from apps.wallet.services import InsufficientFunds, credit_wallet, debit_wallet, place_hold
+
+        credit_wallet(
+            self.wallet.pk,
+            1000,
+            description="Top-up",
+            idempotency_key="service-credit-2",
+            signing_key_id=self.key.pk,
+            signer=self.signer,
+        )
+        place_hold(self.wallet.pk, amount_cents=700, idempotency_key="service-hold-1")
+
+        with self.assertRaises(InsufficientFunds):
+            debit_wallet(
+                self.wallet.pk,
+                400,
+                description="Purchase",
+                idempotency_key="service-debit-1",
+                signing_key_id=self.key.pk,
+                signer=self.signer,
+            )
+
+    def test_capturing_hold_creates_debit_and_releases_reservation(self):
+        from apps.wallet.services import capture_hold, credit_wallet, place_hold
+        from apps.wallet.models import WalletHold
+
+        credit_wallet(
+            self.wallet.pk,
+            1000,
+            description="Top-up",
+            idempotency_key="service-credit-3",
+            signing_key_id=self.key.pk,
+            signer=self.signer,
+        )
+        hold = place_hold(self.wallet.pk, amount_cents=300, idempotency_key="service-hold-2")
+        entry = capture_hold(hold.pk, signing_key_id=self.key.pk, signer=self.signer)
+
+        self.wallet.refresh_from_db()
+        hold.refresh_from_db()
+        self.assertIsNotNone(entry)
+        self.assertEqual(entry.amount_cents, -300)
+        self.assertEqual(self.wallet.balance_cents, 700)
+        self.assertEqual(hold.status, WalletHold.Status.CAPTURED)
+        self.assertEqual(self.wallet.available_balance_cents, 700)
