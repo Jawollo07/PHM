@@ -81,7 +81,7 @@ def _save_account_details(user, form):
     email_changed = user.email.lower() != data["email"].lower()
     user.username = data["username"]
     user.email = data["email"]
-    update_fields = ["username", "email"]
+    update_fields = ["username", "email", "updated_at"]
     if email_changed:
         user.email_verified = False
         user.email_verified_at = None
