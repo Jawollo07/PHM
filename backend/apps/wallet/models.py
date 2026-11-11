@@ -41,11 +41,22 @@ class ImmutableManager(models.Manager.from_queryset(ImmutableQuerySet)):
     pass
 
 
+class WalletQuerySet(models.QuerySet):
+    def delete(self):
+        raise TypeError("Wallets cannot be deleted; archive the customer instead.")
+
+
+class WalletManager(models.Manager.from_queryset(WalletQuerySet)):
+    pass
+
+
 # ============================================================
 # Wallet
 # ============================================================
 
 class Wallet(models.Model):
+    objects = WalletManager()
+
     """
     One financial wallet per customer.
 
