@@ -353,10 +353,6 @@ class WalletTransaction(models.Model):
                 fields=["type", "created_at"],
                 name="wallet_tx_type_idx",
             ),
-            models.Index(
-                fields=["entry_hash"],
-                name="wallet_tx_hash_idx",
-            ),
         ]
 
     def save(self, *args, **kwargs):
