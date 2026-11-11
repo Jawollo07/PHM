@@ -9,6 +9,9 @@ class WalletAdmin(admin.ModelAdmin):
     search_fields = ("id", "customer__user__username", "customer__user__email")
     readonly_fields = tuple(field.name for field in Wallet._meta.fields)
 
+    def has_view_permission(self, request, obj=None):
+        return request.user.is_active and request.user.is_staff
+
     def has_add_permission(self, request):
         return False
 
