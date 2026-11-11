@@ -78,9 +78,15 @@ def get_customer_settings(user):
 
 def _save_account_details(user, form):
     data = form.cleaned_data
+    email_changed = user.email.lower() != data["email"].lower()
     user.username = data["username"]
     user.email = data["email"]
-    user.save(update_fields=["username", "email"])
+    update_fields = ["username", "email"]
+    if email_changed:
+        user.email_verified = False
+        user.email_verified_at = None
+        update_fields.extend(["email_verified", "email_verified_at"])
+    user.save(update_fields=update_fields)
 
     customer = provision_personal_customer(user)
     customer.phone_number = data["phone_number"]
@@ -99,6 +105,7 @@ def _save_account_details(user, form):
             address = CustomerAddress(
                 customer=customer,
                 address_type=CustomerAddress.Type.CONTACT,
+                is_default=True,
             )
         for field in AccountDetailsForm.address_fields:
             setattr(address, field, data[field])
