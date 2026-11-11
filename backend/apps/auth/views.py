@@ -5,6 +5,8 @@ from django.contrib.auth.decorators import login_required
 from django.http import HttpResponse, HttpResponseNotAllowed
 from django.shortcuts import redirect, render
 
+from apps.customers.models import Customer
+
 logger = logging.getLogger(__name__)
 
 
@@ -26,6 +28,13 @@ def login(request):
     username = request.POST.get("username", "").strip()
     password = request.POST.get("password", "")
     user = authenticate(request, username=username, password=password)
+    if user is not None:
+        try:
+            customer = user.customer
+        except Customer.DoesNotExist:
+            customer = None
+        if customer is not None and not customer.is_active:
+            user = None
 
     # Never log passwords, tokens, or other authentication secrets.
     logger.info("Login attempt for username=%s successful=%s", username, user is not None)
