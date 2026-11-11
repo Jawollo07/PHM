@@ -23,7 +23,7 @@ class LoginTests(TestCase):
             {'username': 'testuser', 'password': 'correct-password'},
         )
 
-        self.assertRedirects(response, '/auth/login/test/')
+        self.assertRedirects(response, '/account/')
         self.assertEqual(int(self.client.session['_auth_user_id']), self.user.pk)
 
     def test_login_with_invalid_credentials_shows_error(self):
@@ -43,6 +43,16 @@ class LoginTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 400)
+        self.assertNotIn('_auth_user_id', self.client.session)
+
+    def test_logout_requires_post(self):
+        response = self.client.get('/auth/logout/')
+        self.assertEqual(response.status_code, 405)
+
+    def test_logout_post_clears_session(self):
+        self.client.force_login(self.user)
+        response = self.client.post('/auth/logout/')
+        self.assertRedirects(response, '/auth/')
         self.assertNotIn('_auth_user_id', self.client.session)
 
     def test_success_page_requires_authentication(self):
