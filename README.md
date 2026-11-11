@@ -38,9 +38,9 @@ Owns the personal customer account associated one-to-one with a Django user. It 
 
 - `Customer`: customer status and contact phone number;
 - `CustomerAddress`: contact and billing addresses;
-- `CustomerSettings`: language and notification preferences.
+- `CustomerSettings`: customer-specific notification preferences. Language and timezone are stored in `UserProfile`.
 
-There are no business-account or customer-membership models. The account page reads and updates customer information. New users are provisioned with a customer, profile, customer settings and wallet in one database transaction.
+There are no business-account or customer-membership models. The account page reads and updates customer information. New users are provisioned with a customer, user profile, notification settings and wallet in one database transaction.
 
 ### `apps.wallet`
 
