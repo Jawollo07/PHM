@@ -7,6 +7,11 @@ from .models import EmailVerification, User, UserProfile
 @admin.register(User)
 class PHMUserAdmin(UserAdmin):
     def save_model(self, request, obj, form, change):
+        if change:
+            previous = User.objects.get(pk=obj.pk)
+            if previous.email.lower() != obj.email.lower():
+                obj.email_verified = False
+                obj.email_verified_at = None
         super().save_model(request, obj, form, change)
         from apps.customers.services import provision_personal_customer
         provision_personal_customer(obj)
