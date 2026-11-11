@@ -30,7 +30,9 @@ class AccountViewTests(TestCase):
         self.assertContains(response, 'Kontaktdaten')
 
     def test_account_page_displays_customer_phone_number(self):
-        Customer.objects.create(user=self.user, phone_number='0123456789')
+        customer = Customer.objects.get(user=self.user)
+        customer.phone_number = '0123456789'
+        customer.save(update_fields=['phone_number', 'updated_at'])
 
         response = self.client.get('/account/')
 
