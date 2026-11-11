@@ -175,10 +175,6 @@ class Migration(migrations.Migration):
             model_name="wallettransaction",
             index=models.Index(fields=["type", "created_at"], name="wallet_tx_type_idx"),
         ),
-        migrations.AddIndex(
-            model_name="wallettransaction",
-            index=models.Index(fields=["entry_hash"], name="wallet_tx_hash_idx"),
-        ),
         migrations.AddConstraint(
             model_name="wallethold",
             constraint=models.UniqueConstraint(fields=("wallet", "idempotency_key"), name="wallet_hold_unique_idempotency"),
