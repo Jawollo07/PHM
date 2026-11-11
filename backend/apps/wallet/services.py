@@ -262,3 +262,49 @@ def release_hold(hold_id) -> WalletHold:
     elif hold.status == WalletHold.Status.CAPTURED:
         raise HoldNotActive("A captured hold cannot be released.")
     return hold
+
+
+def verify_wallet_chain(wallet_id, verifier: Callable[[bytes, bytes, bytes], bool]) -> bool:
+    """Verify sequence, balance progression, hash links and signatures.
+
+    The verifier receives (public_key, canonical_payload, signature); private keys
+    remain outside the application database and are never loaded by this function.
+    """
+    wallet = Wallet.objects.get(pk=wallet_id)
+    expected_balance = 0
+    expected_previous_hash = GENESIS_HASH
+
+    entries = wallet.transactions.select_related("signing_key").order_by("sequence_number")
+    for expected_sequence, entry in enumerate(entries, start=1):
+        if entry.sequence_number != expected_sequence:
+            return False
+        if entry.previous_hash != expected_previous_hash:
+            return False
+
+        payload = {
+            "payload_version": entry.payload_version,
+            "wallet_id": str(wallet.pk),
+            "sequence_number": entry.sequence_number,
+            "type": entry.type,
+            "amount_cents": entry.amount_cents,
+            "balance_after_cents": entry.balance_after_cents,
+            "description": entry.description,
+            "idempotency_key": entry.idempotency_key,
+            "reference": entry.reference,
+            "metadata": entry.metadata,
+            "previous_hash": entry.previous_hash,
+            "signing_key_id": entry.signing_key.key_id,
+            "created_at": entry.created_at.isoformat(),
+        }
+        canonical_payload = _canonical_bytes(payload)
+        if hashlib.sha256(canonical_payload).hexdigest() != entry.entry_hash:
+            return False
+        if not verifier(bytes(entry.signing_key.public_key), canonical_payload, bytes(entry.signature)):
+            return False
+
+        expected_balance += entry.amount_cents
+        if expected_balance < 0 or entry.balance_after_cents != expected_balance:
+            return False
+        expected_previous_hash = entry.entry_hash
+
+    return expected_balance == wallet.balance_cents
