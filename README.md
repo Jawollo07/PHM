@@ -2,7 +2,7 @@
 
 A Django-based customer and billing platform for managing hosting services backed by Pelican Panel.
 
-PHM is under active development. The repository currently contains the initial Django project and the authentication and personal-customer account code. Payment processing, the complete wallet workflow, hosting orders, subscriptions, invoices and Pelican provisioning are not yet integrated into a complete end-to-end product.
+PHM is under active development. The repository contains the Django project, authentication, personal-customer account provisioning and an initial wallet ledger/service foundation. Payment processing, hosting orders, subscriptions, invoices and Pelican provisioning are not yet integrated into a complete end-to-end product.
 
 ## Product scope
 
@@ -44,9 +44,9 @@ There are no business-account or customer-membership models. The current account
 
 ### Planned domain applications
 
-The following areas are part of the intended architecture. They should not be considered complete just because they are in the plan:
+The following areas remain planned and are not yet complete:
 
-- `wallet`: one EUR wallet per customer, balance management and append-only transaction ledger;
+- `wallet`: one EUR wallet per customer, initial append-only ledger models, idempotent transaction services and balance holds;
 - `payments`: payment-provider integrations, manual payment verification and webhook handling;
 - `catalog`: hosting products, plans and prices;
 - `orders`: customer purchases;
@@ -140,4 +140,4 @@ Never commit passwords, private signing keys, API tokens, production database cr
 
 PHM is an early-stage Django application. The current repository should be treated as a development scaffold, not as a production-ready billing or hosting platform.
 
-Verify model/migration history before applying schema changes to a database containing data. The current authentication migration history and the custom user model must be reconciled before relying on a fresh or upgraded database.
+Verify model/migration history before applying schema changes to a database containing data. The authentication and customer migration history has been extended to provision personal customer records and wallets. Always back up an existing database before applying migrations, and verify the migration plan against a copy first.
