@@ -1,5 +1,6 @@
 from django.contrib.auth import get_user_model
 from django.test import TestCase
+from django.utils import timezone
 
 from apps.auth.models import UserProfile
 from apps.customers.models import Customer, CustomerAddress, CustomerSettings
@@ -41,7 +42,7 @@ class AccountViewTests(TestCase):
 
     def test_account_page_updates_user_customer_and_settings(self):
         self.user.email_verified = True
-        self.user.email_verified_at = __import__('django.utils.timezone', fromlist=['now']).now()
+        self.user.email_verified_at = timezone.now()
         self.user.save(update_fields=['email_verified', 'email_verified_at'])
         response = self.client.post(
             '/account/',
