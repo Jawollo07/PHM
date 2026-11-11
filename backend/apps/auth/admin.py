@@ -6,6 +6,11 @@ from .models import EmailVerification, User, UserProfile
 
 @admin.register(User)
 class PHMUserAdmin(UserAdmin):
+    def save_model(self, request, obj, form, change):
+        super().save_model(request, obj, form, change)
+        from apps.customers.services import provision_personal_customer
+        provision_personal_customer(obj)
+
     list_display = ("username", "email", "email_verified", "is_active", "is_staff")
     list_filter = ("email_verified", "is_active", "is_staff", "is_superuser")
     search_fields = ("username", "email")
