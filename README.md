@@ -8,7 +8,7 @@ PHM is under active development. The repository contains the Django project, aut
 
 PHM supports **private customers only**. There are no business accounts, company tenants or customer-member roles.
 
-Each registered user is intended to have one personal customer account and one wallet belonging to that customer. The customer account holds contact information, addresses and customer-specific preferences.
+Each registered user is provisioned with one personal customer account and one wallet belonging to that customer. The customer account holds contact information, addresses and customer-specific preferences.
 
 Customers are intended to be able to top up their wallet through supported payment providers or manually verified payments, purchase and renew hosting services using the same wallet, and view their transactions, orders, invoices and assigned servers. Administrators may also assign privately managed servers to customers.
 
@@ -104,9 +104,7 @@ python -m venv .venv
 source .venv/bin/activate
 ```
 
-Install the backend dependencies:
-
-Run Django checks and inspect/apply migrations:
+Install the backend dependencies, then run Django checks and inspect/apply migrations:
 
 ```bash
 python -m pip install -r requirements.txt
