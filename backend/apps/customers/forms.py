@@ -1,18 +1,16 @@
 from django import forms
 from django.contrib.auth import get_user_model
 
+from apps.auth.models import UserProfile
+
 
 class AccountDetailsForm(forms.Form):
     username = forms.CharField(label="Benutzername", max_length=150)
     email = forms.EmailField(label="E-Mail-Adresse", max_length=254)
-    phone_number = forms.CharField(
-        label="Telefonnummer",
-        max_length=30,
-        required=False,
-    )
+    phone_number = forms.CharField(label="Telefonnummer", max_length=30, required=False)
 
     recipient_name = forms.CharField(label="Empfängername", max_length=255, required=False)
-    company_name = forms.CharField(label="Unternehmen", max_length=255, required=False)
+    company_name = forms.CharField(label="Zusätzliche Empfängerzeile", max_length=255, required=False)
     street = forms.CharField(label="Straße", max_length=255, required=False)
     house_number = forms.CharField(label="Hausnummer", max_length=30, required=False)
     address_line_2 = forms.CharField(label="Adresszusatz", max_length=255, required=False)
@@ -21,10 +19,7 @@ class AccountDetailsForm(forms.Form):
     state = forms.CharField(label="Bundesland", max_length=120, required=False)
     country = forms.CharField(label="Land", max_length=64, required=False)
 
-    language = forms.ChoiceField(
-        label="Sprache",
-        choices=(("de", "Deutsch"), ("en", "Englisch")),
-    )
+    language = forms.ChoiceField(label="Sprache", choices=(("de", "Deutsch"), ("en", "Englisch")))
     email_notifications = forms.BooleanField(label="E-Mail", required=False)
     service_notifications = forms.BooleanField(label="Service", required=False)
     payment_notifications = forms.BooleanField(label="Zahlungen", required=False)
@@ -33,53 +28,31 @@ class AccountDetailsForm(forms.Form):
 
     address_required_fields = ("recipient_name", "street", "postal_code", "city")
     address_fields = (
-        "recipient_name",
-        "company_name",
-        "street",
-        "house_number",
-        "address_line_2",
-        "postal_code",
-        "city",
-        "state",
+        "recipient_name", "company_name", "street", "house_number",
+        "address_line_2", "postal_code", "city", "state",
     )
 
-    def __init__(
-        self,
-        *args,
-        user,
-        customer=None,
-        address=None,
-        customer_settings=None,
-        **kwargs,
-    ):
+    def __init__(self, *args, user, customer=None, address=None, customer_settings=None, **kwargs):
         self.user = user
         self.address_exists = address is not None
+        try:
+            profile = user.profile
+        except UserProfile.DoesNotExist:
+            profile = None
+
         initial = {
             "username": user.username,
             "email": user.email,
             "phone_number": customer.phone_number if customer else "",
-            "language": customer_settings.language if customer_settings else "de",
-            "email_notifications": (
-                customer_settings.email_notifications if customer_settings else True
-            ),
-            "service_notifications": (
-                customer_settings.service_notifications if customer_settings else True
-            ),
-            "payment_notifications": (
-                customer_settings.payment_notifications if customer_settings else True
-            ),
-            "security_notifications": (
-                customer_settings.security_notifications if customer_settings else True
-            ),
+            "language": profile.language if profile else "de",
+            "email_notifications": customer_settings.email_notifications if customer_settings else True,
+            "service_notifications": customer_settings.service_notifications if customer_settings else True,
+            "payment_notifications": customer_settings.payment_notifications if customer_settings else True,
+            "security_notifications": customer_settings.security_notifications if customer_settings else True,
             "marketing_emails": customer_settings.marketing_emails if customer_settings else False,
         }
         if address:
-            initial.update(
-                {
-                    field: getattr(address, field)
-                    for field in self.address_fields
-                }
-            )
+            initial.update({field: getattr(address, field) for field in self.address_fields})
             initial["country"] = address.country
         else:
             initial["country"] = "Germany"
@@ -88,10 +61,7 @@ class AccountDetailsForm(forms.Form):
 
         current_language = initial["language"]
         if current_language not in dict(self.fields["language"].choices):
-            self.fields["language"].choices = (
-                *self.fields["language"].choices,
-                (current_language, current_language),
-            )
+            self.fields["language"].choices = (*self.fields["language"].choices, (current_language, current_language))
 
         for field in self.fields.values():
             field.widget.attrs["class"] = (
@@ -116,10 +86,7 @@ class AccountDetailsForm(forms.Form):
 
     def clean(self):
         cleaned_data = super().clean()
-        has_address_details = any(
-            cleaned_data.get(field)
-            for field in self.address_fields
-        )
+        has_address_details = any(cleaned_data.get(field) for field in self.address_fields)
         if self.address_exists or has_address_details:
             for field in self.address_required_fields:
                 if not cleaned_data.get(field):
