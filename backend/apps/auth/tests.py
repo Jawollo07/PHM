@@ -29,6 +29,16 @@ class LoginTests(TestCase):
         self.assertTrue(hasattr(self.user, 'customer'))
         self.assertTrue(Wallet.objects.filter(customer=self.user.customer).exists())
 
+    def test_suspended_customer_cannot_log_in(self):
+        self.user.customer.status = 'suspended'
+        self.user.customer.save(update_fields=['status', 'updated_at'])
+        response = self.client.post(
+            '/auth/login/',
+            {'username': 'testuser', 'password': 'correct-password'},
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertNotIn('_auth_user_id', self.client.session)
+
     def test_login_with_invalid_credentials_shows_error(self):
         response = self.client.post(
             '/auth/login/',
