@@ -37,8 +37,8 @@ def _canonical_bytes(payload: dict) -> bytes:
 
 
 def _validate_direction(transaction_type: str, amount_cents: int) -> None:
-    if amount_cents == 0:
-        raise InvalidLedgerOperation("A ledger transaction cannot be zero.")
+    if type(amount_cents) is not int or amount_cents == 0:
+        raise InvalidLedgerOperation("A ledger transaction must be a non-zero integer number of cents.")
     if transaction_type in (WalletTransaction.Type.TOPUP, WalletTransaction.Type.REFUND):
         if amount_cents <= 0:
             raise InvalidLedgerOperation("Top-ups and refunds must be positive.")
@@ -65,6 +65,8 @@ def _post_locked(
     if not idempotency_key or len(idempotency_key) > 128:
         raise InvalidLedgerOperation("A valid idempotency key is required.")
 
+    if not isinstance(metadata, dict):
+        raise InvalidLedgerOperation("Transaction metadata must be an object.")
     metadata = metadata or {}
     existing = WalletTransaction.objects.filter(wallet=wallet, idempotency_key=idempotency_key).first()
     if existing:
@@ -166,8 +168,8 @@ def post_transaction(
 
 
 def credit_wallet(wallet_id, amount_cents: int, **kwargs) -> WalletTransaction:
-    if amount_cents <= 0:
-        raise InvalidLedgerOperation("Credit amount must be positive.")
+    if type(amount_cents) is not int or amount_cents <= 0:
+        raise InvalidLedgerOperation("Credit amount must be a positive integer number of cents.")
     return post_transaction(
         wallet_id,
         transaction_type=kwargs.pop("transaction_type", WalletTransaction.Type.TOPUP),
@@ -177,8 +179,8 @@ def credit_wallet(wallet_id, amount_cents: int, **kwargs) -> WalletTransaction:
 
 
 def debit_wallet(wallet_id, amount_cents: int, **kwargs) -> WalletTransaction:
-    if amount_cents <= 0:
-        raise InvalidLedgerOperation("Debit amount must be positive.")
+    if type(amount_cents) is not int or amount_cents <= 0:
+        raise InvalidLedgerOperation("Debit amount must be a positive integer number of cents.")
     return post_transaction(
         wallet_id,
         transaction_type=WalletTransaction.Type.PURCHASE,
@@ -197,12 +199,23 @@ def place_hold(
     expires_at: datetime | None = None,
     metadata: dict | None = None,
 ) -> WalletHold:
-    if amount_cents <= 0:
-        raise InvalidLedgerOperation("Hold amount must be positive.")
+    if type(amount_cents) is not int or amount_cents <= 0:
+        raise InvalidLedgerOperation("Hold amount must be a positive integer number of cents.")
+    if not idempotency_key or len(idempotency_key) > 128:
+        raise InvalidLedgerOperation("A valid hold idempotency key is required.")
+    if metadata is not None and not isinstance(metadata, dict):
+        raise InvalidLedgerOperation("Hold metadata must be an object.")
+    if expires_at is not None and not timezone.is_aware(expires_at):
+        raise InvalidLedgerOperation("Hold expiry must be timezone-aware.")
     wallet = Wallet.objects.select_for_update().get(pk=wallet_id)
     existing = WalletHold.objects.filter(wallet=wallet, idempotency_key=idempotency_key).first()
     if existing:
-        if existing.amount_cents != amount_cents or existing.reference != reference:
+        if (
+            existing.amount_cents != amount_cents
+            or existing.reference != reference
+            or existing.expires_at != expires_at
+            or existing.metadata != (metadata or {})
+        ):
             raise IdempotencyConflict("The hold idempotency key was already used.")
         return existing
     if wallet.available_balance_cents < amount_cents:
