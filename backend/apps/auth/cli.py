@@ -21,11 +21,11 @@ def _create_user(args):
     from django.contrib.auth import get_user_model
     from django.contrib.auth.password_validation import validate_password
     from django.core.exceptions import ValidationError
-    from django.db import IntegrityError
+    from django.db import IntegrityError, transaction
 
     User = get_user_model()
-    username = input("Benutzername: ").strip()
-    email = input("E-Mail-Adresse: ").strip()
+    username = (args.username or input("Benutzername: ")).strip()
+    email = (args.email or input("E-Mail-Adresse: ")).strip().lower()
 
     if not username or not email:
         print("Benutzername und E-Mail-Adresse dürfen nicht leer sein.", file=sys.stderr)
@@ -54,11 +54,12 @@ def _create_user(args):
         return 2
 
     try:
-        User.objects.create_user(
-            username=username,
-            email=email,
-            password=password,
-        )
+        with transaction.atomic():
+            User.objects.create_user(
+                username=username,
+                email=email,
+                password=password,
+            )
     except IntegrityError:
         print("Benutzername oder E-Mail-Adresse ist bereits vergeben.", file=sys.stderr)
         return 2
@@ -75,6 +76,8 @@ def main(argv=None):
         "create-user",
         help="Einen normalen Benutzer erstellen.",
     )
+    create_user_parser.add_argument("--username", help="Benutzername")
+    create_user_parser.add_argument("--email", help="E-Mail-Adresse")
 
     args = parser.parse_args(argv)
     _setup_django()
