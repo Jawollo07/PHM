@@ -1,7 +1,9 @@
 from django.contrib.auth import get_user_model
 from django.test import TestCase
 
+from apps.auth.models import UserProfile
 from apps.customers.models import Customer, CustomerAddress, CustomerSettings
+from apps.wallet.models import Wallet
 
 
 class AccountViewTests(TestCase):
@@ -13,14 +15,19 @@ class AccountViewTests(TestCase):
         )
         self.client.force_login(self.user)
 
-    def test_account_page_handles_user_without_customer(self):
+    def test_user_creation_provisions_customer_settings_and_wallet(self):
+        customer = Customer.objects.get(user=self.user)
+        self.assertTrue(CustomerSettings.objects.filter(customer=customer).exists())
+        self.assertTrue(Wallet.objects.filter(customer=customer).exists())
+
+    def test_account_page_displays_provisioned_customer(self):
         response = self.client.get('/account/')
 
         self.assertEqual(response.status_code, 200)
         self.assertTemplateUsed(response, 'customers/index.html')
         self.assertContains(response, 'testuser')
         self.assertContains(response, 'test@example.com')
-        self.assertContains(response, 'noch kein Kundenkonto angelegt')
+        self.assertContains(response, 'Kontaktdaten')
 
     def test_account_page_displays_customer_phone_number(self):
         Customer.objects.create(user=self.user, phone_number='0123456789')
@@ -60,7 +67,8 @@ class AccountViewTests(TestCase):
         customer = Customer.objects.get(user=self.user)
         self.assertEqual(customer.phone_number, '0123456789')
         settings = CustomerSettings.objects.get(customer=customer)
-        self.assertEqual(settings.language, 'en')
+        profile = UserProfile.objects.get(user=self.user)
+        self.assertEqual(profile.language, 'en')
         self.assertTrue(settings.email_notifications)
         self.assertFalse(settings.service_notifications)
         self.assertTrue(settings.marketing_emails)
