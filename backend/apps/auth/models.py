@@ -25,7 +25,7 @@ class UserManager(BaseUserManager):
             user.save(using=self._db)
             # Import lazily to avoid a circular dependency between app models.
             from apps.customers.services import provision_personal_customer
-            provision_personal_customer(user)
+            provision_personal_customer(user, using=self._db)
 
         return user
 
