@@ -122,6 +122,24 @@ class WalletServiceTests(TestCase):
                 signer=self.signer,
             )
 
+    def test_signed_ledger_chain_can_be_verified(self):
+        from apps.wallet.services import credit_wallet, verify_wallet_chain
+
+        credit_wallet(
+            self.wallet.pk,
+            1000,
+            description='Chain test top-up',
+            idempotency_key='chain-credit-1',
+            signing_key_id=self.key.pk,
+            signer=self.signer,
+        )
+        self.assertTrue(
+            verify_wallet_chain(
+                self.wallet.pk,
+                verifier=lambda public_key, payload, signature: signature == b'test-signature',
+            )
+        )
+
     def test_capturing_hold_creates_debit_and_releases_reservation(self):
         from apps.wallet.services import capture_hold, credit_wallet, place_hold
         from apps.wallet.models import WalletHold
