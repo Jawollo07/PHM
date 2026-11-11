@@ -5,8 +5,10 @@ from django.contrib.auth.decorators import login_required
 from django.db import transaction
 from django.shortcuts import redirect, render
 
+from apps.auth.models import UserProfile
 from apps.customers.forms import AccountDetailsForm
 from apps.customers.models import Customer, CustomerAddress, CustomerSettings
+from apps.customers.services import provision_personal_customer
 
 
 def get_customer_details(user):
@@ -14,7 +16,6 @@ def get_customer_details(user):
         customer = user.customer
     except Customer.DoesNotExist:
         return None
-
     return {"phone_number": customer.phone_number}
 
 
@@ -24,7 +25,10 @@ def get_customer_address(user):
     except Customer.DoesNotExist:
         return None
 
-    address = customer.addresses.first()
+    address = (
+        customer.addresses.filter(address_type=CustomerAddress.Type.CONTACT).first()
+        or customer.addresses.filter(address_type=CustomerAddress.Type.BILLING).first()
+    )
     if not address:
         return None
 
@@ -48,13 +52,20 @@ def get_customer_address(user):
 
 def get_customer_settings(user):
     try:
-        customer_settings = user.customer.settings
+        customer = user.customer
+        customer_settings = customer.settings
     except (Customer.DoesNotExist, CustomerSettings.DoesNotExist):
         return None
 
-    language = pycountry.languages.get(alpha_2=customer_settings.language)
+    try:
+        profile = user.profile
+        language_code = profile.language
+    except UserProfile.DoesNotExist:
+        language_code = "de"
+
+    language = pycountry.languages.get(alpha_2=language_code)
     return {
-        "language": language.name if language else customer_settings.language,
+        "language": language.name if language else language_code,
         "notification_settings": {
             "email_notifications": customer_settings.email_notifications,
             "service_notifications": customer_settings.service_notifications,
@@ -71,15 +82,18 @@ def _save_account_details(user, form):
     user.email = data["email"]
     user.save(update_fields=["username", "email"])
 
-    customer, _ = Customer.objects.get_or_create(user=user)
+    customer = provision_personal_customer(user)
     customer.phone_number = data["phone_number"]
     customer.save(update_fields=["phone_number", "updated_at"])
 
-    address = customer.addresses.first() # type: ignore
-    has_address_details = any(
-        data[field]
-        for field in AccountDetailsForm.address_fields
-    )
+    profile, _ = UserProfile.objects.get_or_create(user=user)
+    profile.language = data["language"]
+    profile.save(update_fields=["language", "updated_at"])
+
+    address = customer.addresses.filter(
+        address_type=CustomerAddress.Type.CONTACT
+    ).first()
+    has_address_details = any(data[field] for field in AccountDetailsForm.address_fields)
     if address or has_address_details:
         if address is None:
             address = CustomerAddress(
@@ -91,19 +105,8 @@ def _save_account_details(user, form):
         address.country = data["country"] or "Germany"
         address.save()
 
-    customer_settings, _ = CustomerSettings.objects.get_or_create(
-        customer=customer,
-        defaults={
-            "language": data["language"],
-            "email_notifications": data["email_notifications"],
-            "service_notifications": data["service_notifications"],
-            "payment_notifications": data["payment_notifications"],
-            "security_notifications": data["security_notifications"],
-            "marketing_emails": data["marketing_emails"],
-        },
-    )
+    customer_settings = customer.settings
     for field in (
-        "language",
         "email_notifications",
         "service_notifications",
         "payment_notifications",
@@ -122,11 +125,17 @@ def account_view(request):
     except Customer.DoesNotExist:
         customer = None
 
-    address = customer.addresses.first() if customer else None
-    try:
-        customer_settings = customer.settings if customer else None
-    except CustomerSettings.DoesNotExist:
-        customer_settings = None
+    address = None
+    customer_settings = None
+    if customer:
+        address = (
+            customer.addresses.filter(address_type=CustomerAddress.Type.CONTACT).first()
+            or customer.addresses.filter(address_type=CustomerAddress.Type.BILLING).first()
+        )
+        try:
+            customer_settings = customer.settings
+        except CustomerSettings.DoesNotExist:
+            pass
 
     form = AccountDetailsForm(
         request.POST if request.method == "POST" else None,
@@ -141,20 +150,18 @@ def account_view(request):
         messages.success(request, "Deine Kontodaten wurden gespeichert.")
         return redirect("account")
 
-    customer_details = get_customer_details(user)
     customer_settings_details = get_customer_settings(user)
     return render(
         request,
         "customers/index.html",
         {
             "user_details": {"username": user.username, "email": user.email},
-            "customer_details": customer_details,
+            "customer_details": get_customer_details(user),
             "customer_address": get_customer_address(user),
             "customer_settings": customer_settings_details,
             "customer_notification_settings": (
                 customer_settings_details.get("notification_settings")
-                if customer_settings_details
-                else None
+                if customer_settings_details else None
             ),
             "form": form,
         },
