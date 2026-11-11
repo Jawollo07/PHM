@@ -55,13 +55,9 @@ class WalletManager(models.Manager.from_queryset(WalletQuerySet)):
 # ============================================================
 
 class Wallet(models.Model):
+    """One financial wallet per customer; all amounts are stored in EUR cents."""
+
     objects = WalletManager()
-
-    """
-    One financial wallet per customer.
-
-    All amounts are stored in EUR cents.
-    """
 
     id = models.UUIDField(
         primary_key=True,
