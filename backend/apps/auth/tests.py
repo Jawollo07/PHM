@@ -5,6 +5,7 @@ from django.contrib.auth import get_user_model
 from django.test import TestCase
 
 from apps.auth.cli import main as run_auth_cli
+from apps.wallet.models import Wallet
 
 User = get_user_model()
 
@@ -25,6 +26,8 @@ class LoginTests(TestCase):
 
         self.assertRedirects(response, '/account/')
         self.assertEqual(int(self.client.session['_auth_user_id']), self.user.pk)
+        self.assertTrue(hasattr(self.user, 'customer'))
+        self.assertTrue(Wallet.objects.filter(customer=self.user.customer).exists())
 
     def test_login_with_invalid_credentials_shows_error(self):
         response = self.client.post(
