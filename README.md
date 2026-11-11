@@ -40,13 +40,15 @@ Owns the personal customer account associated one-to-one with a Django user. It 
 - `CustomerAddress`: contact and billing addresses;
 - `CustomerSettings`: language and notification preferences.
 
-There are no business-account or customer-membership models. The current account page also reads/writes customer information; keep its form fields and model field names synchronized when changing the schema.
+There are no business-account or customer-membership models. The account page reads and updates customer information. New users are provisioned with a customer, profile, customer settings and wallet in one database transaction.
+
+### `apps.wallet`
+
+Owns the single EUR wallet for each personal customer. The repository now includes wallet, hold, signing-key, transaction and checkpoint models, initial migrations, idempotent transaction services, and a verification hook for the per-wallet hash/signature chain. The signing operation is injected through a provider callback; private signing keys are not stored in the PHM database. A production signing provider, externally retained checkpoints, database-level append-only enforcement and payment integration are still outstanding.
 
 ### Planned domain applications
 
 The following areas remain planned and are not yet complete:
-
-- `wallet`: one EUR wallet per customer, initial append-only ledger models, idempotent transaction services and balance holds;
 - `payments`: payment-provider integrations, manual payment verification and webhook handling;
 - `catalog`: hosting products, plans and prices;
 - `orders`: customer purchases;
@@ -84,7 +86,8 @@ PHM/
 │   │   └── wsgi.py
 │   ├── apps/
 │   │   ├── auth/
-│   │   └── customers/
+│   │   ├── customers/
+│   │   └── wallet/
 │   └── manage.py
 └── README.md
 ```
@@ -101,11 +104,12 @@ python -m venv .venv
 source .venv/bin/activate
 ```
 
-Install dependencies using the Python dependency manifest in your working checkout. If no dependency manifest is present, Django and the other required packages must be installed explicitly before running management commands.
+Install the backend dependencies:
 
 Run Django checks and inspect/apply migrations:
 
 ```bash
+python -m pip install -r requirements.txt
 python manage.py check
 python manage.py showmigrations
 python manage.py migrate
