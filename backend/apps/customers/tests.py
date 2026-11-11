@@ -21,6 +21,16 @@ class AccountViewTests(TestCase):
         self.assertTrue(CustomerSettings.objects.filter(customer=customer).exists())
         self.assertTrue(Wallet.objects.filter(customer=customer).exists())
 
+    def test_suspended_customer_session_is_terminated(self):
+        customer = Customer.objects.get(user=self.user)
+        customer.status = Customer.Status.SUSPENDED
+        customer.save(update_fields=['status', 'updated_at'])
+
+        response = self.client.get('/account/')
+
+        self.assertRedirects(response, '/auth/')
+        self.assertNotIn('_auth_user_id', self.client.session)
+
     def test_account_page_displays_provisioned_customer(self):
         response = self.client.get('/account/')
 
