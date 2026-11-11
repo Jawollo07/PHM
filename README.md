@@ -1,58 +1,143 @@
 # PHM — Pelican Host Manager
 
-A self-hosted customer and billing platform for Pelican Panel.
+A Django-based customer and billing platform for managing hosting services backed by Pelican Panel.
 
-## Product direction
+PHM is under active development. The repository currently contains the initial Django project and the authentication and personal-customer account code. Payment processing, the complete wallet workflow, hosting orders, subscriptions, invoices and Pelican provisioning are not yet integrated into a complete end-to-end product.
 
-PHM supports commercial game-server hosting and privately assigned servers. Every customer has exactly one prepaid wallet. Customers top up that wallet using supported payment providers or manually verified payments; purchases and renewals debit the same balance.
+## Product scope
 
-## Architecture
+PHM supports **private customers only**. There are no business accounts, company tenants or customer-member roles.
 
-- Backend: FastAPI (Python 3.12+)
-- Database: PostgreSQL (SQLAlchemy 2 + Alembic)
-- Background jobs: Redis + worker (planned)
-- Frontend: React + TypeScript (planned)
-- Pelican integration: server-side adapter using Pelican's documented API
-- Deployment: Docker Compose
+Each registered user is intended to have one personal customer account and one wallet belonging to that customer. The customer account holds contact information, addresses and customer-specific preferences.
 
-## Wallet invariants
+Customers are intended to be able to top up their wallet through supported payment providers or manually verified payments, purchase and renew hosting services using the same wallet, and view their transactions, orders, invoices and assigned servers. Administrators may also assign privately managed servers to customers.
 
-1. Exactly one wallet per customer, enforced by a database uniqueness constraint.
-2. Balances are integer EUR cents; floating-point money is never used.
-3. Every mutation creates an immutable ledger row and updates the cached balance in the same DB transaction.
-4. Ledger amounts are signed: credits are positive, debits are negative.
-5. Top-ups and refunds must be credits; purchases must be debits. Admin adjustments may go either way.
-6. Debits cannot overdraw the wallet.
-7. A repeated idempotency key with the same payload returns the original transaction; a different payload is rejected.
-8. Payment-provider funds are credited only after server-side verification. Pending top-ups are not spendable.
+## Technology and current state
 
-There are no separate balances for payment methods, products, subscriptions, or promotions.
+| Area | Current state / direction |
+|---|---|
+| Backend | Python and Django |
+| Authentication | Django authentication with a custom `User` model |
+| Database | SQLite in the current development settings; PostgreSQL is intended for production |
+| Frontend | No complete frontend architecture established in the current repository |
+| Hosting integration | Pelican Panel API adapter planned |
+| Payments | Provider-based and manually verified payments planned |
+| Deployment | Production configuration pending |
+
+The Django project is located in `backend/`. Its project package is `backend/core/`, and Django applications are located in `backend/apps/`.
+
+## Current Django applications
+
+### `apps.auth`
+
+Owns user identity and authentication. The current custom user model uses a username for login and stores a unique email address. The app also contains user-profile and email-verification models.
+
+### `apps.customers`
+
+Owns the personal customer account associated one-to-one with a Django user. It currently contains:
+
+- `Customer`: customer status and contact phone number;
+- `CustomerAddress`: contact and billing addresses;
+- `CustomerSettings`: language and notification preferences.
+
+There are no business-account or customer-membership models. The current account page also reads/writes customer information; keep its form fields and model field names synchronized when changing the schema.
+
+### Planned domain applications
+
+The following areas are part of the intended architecture. They should not be considered complete just because they are in the plan:
+
+- `wallet`: one EUR wallet per customer, balance management and append-only transaction ledger;
+- `payments`: payment-provider integrations, manual payment verification and webhook handling;
+- `catalog`: hosting products, plans and prices;
+- `orders`: customer purchases;
+- `subscriptions`: recurring hosting contracts and renewals;
+- `invoices`: invoice creation and records;
+- `pelican`: synchronization and provisioning through the Pelican Panel API;
+- `audit`: security-sensitive and administrative audit events.
+
+## Wallet and accounting rules
+
+These are mandatory domain invariants for the wallet implementation:
+
+1. Exactly one wallet per customer.
+2. Store money as integer EUR cents. Never use floating-point values for money.
+3. All top-ups, purchases, renewals, refunds and administrator adjustments affect the same wallet.
+4. Every posted balance change must create a corresponding ledger entry in the same database transaction.
+5. Ledger entries are append-only. Corrections are represented by compensating entries, not by editing history.
+6. Credits are positive and debits are negative.
+7. A debit must never make the wallet balance negative.
+8. Idempotency keys prevent duplicate processing. Reusing a key with a different request payload must be rejected.
+9. Pending top-ups are not spendable. Funds are credited only after server-side payment verification succeeds.
+10. Wallet operations must be serialized safely to prevent concurrent requests from overspending a balance.
+
+A cryptographically verifiable ledger is a design goal. Hashes and signatures must be generated and verified by dedicated ledger services. A signature alone does not replace database access controls, backups or externally retained checkpoints.
+
+## Repository layout
+
+```text
+PHM/
+├── backend/
+│   ├── core/
+│   │   ├── settings.py
+│   │   ├── urls.py
+│   │   ├── asgi.py
+│   │   └── wsgi.py
+│   ├── apps/
+│   │   ├── auth/
+│   │   └── customers/
+│   └── manage.py
+└── README.md
+```
+
+This is the current high-level layout, not a promise that every planned application or production component already exists.
 
 ## Local development
 
-Requirements: Python 3.12+ and PostgreSQL 16+.
+The Django project entry point is `backend/manage.py`. From the repository root:
 
 ```bash
+cd backend
 python -m venv .venv
 source .venv/bin/activate
-python -m pip install -e ".[dev]"
-export DATABASE_URL="postgresql+asyncpg://phm:change-me@localhost:5432/phm"
-alembic upgrade head
-uvicorn backend.app.main:app --reload
 ```
 
-Run checks:
+Install dependencies using the Python dependency manifest in your working checkout. If no dependency manifest is present, Django and the other required packages must be installed explicitly before running management commands.
+
+Run Django checks and inspect/apply migrations:
 
 ```bash
-ruff check backend
-pytest -q
-alembic upgrade head
+python manage.py check
+python manage.py showmigrations
+python manage.py migrate
 ```
 
-For a local database, `docker compose up -d db` starts PostgreSQL. Set a strong `POSTGRES_PASSWORD` in the environment before using Compose outside a disposable local environment.
+Start the development server:
+
+```bash
+python manage.py runserver
+```
+
+The current settings use SQLite for development. Do not expose the development server publicly or use the current settings as a production configuration.
+
+## Configuration and security
+
+Before deploying PHM:
+
+- load `SECRET_KEY` from a secret manager or environment variable;
+- set `DEBUG=False`;
+- configure `ALLOWED_HOSTS` and trusted CSRF origins;
+- configure PostgreSQL and database credentials outside source control;
+- configure secure HTTPS cookies and proxy headers for the actual reverse-proxy setup;
+- configure a real email backend;
+- remove password, token and payment-data logging;
+- apply least-privilege database permissions;
+- add tests for authorization, customer isolation, wallet concurrency and payment idempotency;
+- establish encrypted backups and a tested restore procedure.
+
+Never commit passwords, private signing keys, API tokens, production database credentials or other secrets.
 
 ## Development status
 
-The initial single-wallet ledger, signed transaction semantics, Alembic schema migration, wallet tests, and GitHub Actions CI are in place. Authentication, payment-provider verification, customer UI, Pelican provisioning, and production deployment hardening remain future milestones.
+PHM is an early-stage Django application. The current repository should be treated as a development scaffold, not as a production-ready billing or hosting platform.
 
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), [docs/ROADMAP.md](docs/ROADMAP.md), and [docs/MASTER_PLAN.md](docs/MASTER_PLAN.md).
+Verify model/migration history before applying schema changes to a database containing data. The current authentication migration history and the custom user model must be reconciled before relying on a fresh or upgraded database.
