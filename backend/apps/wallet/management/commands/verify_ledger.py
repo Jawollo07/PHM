@@ -1,7 +1,7 @@
 from django.core.management.base import BaseCommand, CommandError
 
 from apps.wallet.checkpoints import verify_ledger_checkpoint
-from apps.wallet.models import LedgerCheckpoint, Wallet
+from apps.wallet.models import LedgerCheckpoint, Wallet, WalletTransaction
 from apps.wallet.services import verify_wallet_chain
 from apps.wallet.signing import verify_payload
 
@@ -33,7 +33,7 @@ class Command(BaseCommand):
                     f"Wallet {wallet.pk}: hash chain, signature, sequence, "
                     "or balance verification failed."
                 )
-            transaction_count += wallet.transactions.count()
+        transaction_count = WalletTransaction.objects.count()
 
         checkpoint = (
             LedgerCheckpoint.objects.select_related("signing_key")
