@@ -129,12 +129,28 @@ class PelicanServerProvisioningTests(TestCase):
         self.assertEqual(client.payloads, [])
 
     def test_missing_pelican_plan_configuration_fails_closed(self):
-        item = self.record.order_item
-        item.resource_limits = {}
-        item.save = lambda *args, **kwargs: None
-        self.record.order_item = item
+        order = self.record.order_item.order
+        item = OrderItem.objects.create(
+            order=order,
+            plan=self.plan,
+            product_name="Minecraft",
+            plan_name="Broken",
+            description="",
+            quantity=1,
+            unit_price_cents=0,
+            setup_fee_cents=0,
+            line_total_cents=0,
+            billing_interval_unit="once",
+            billing_interval_count=1,
+            resource_limits={},
+        )
+        record_to_test = PelicanServer.objects.create(
+            order_item=item,
+            customer=self.customer,
+            external_id=f"phm-orderitem-{item.pk}",
+        )
         client = FakeProvisioningClient()
-        record = sync_pelican_server(self.record.pk, client=client)
+        record = sync_pelican_server(record_to_test.pk, client=client)
         self.assertEqual(record.status, PelicanServer.Status.FAILED)
         self.assertEqual(record.last_error_code, "pelican_config_missing")
         self.assertEqual(client.payloads, [])
