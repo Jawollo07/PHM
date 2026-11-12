@@ -3,7 +3,7 @@ from django.test import TestCase
 
 from apps.catalog.models import HostingPlan, HostingProduct
 from apps.wallet.models import LedgerSigningKey, Wallet
-from apps.wallet.services import credit_wallet
+from apps.wallet.services import InsufficientFunds, credit_wallet
 from apps.orders.models import Order
 from apps.orders.services import (
     IdempotencyConflict,
@@ -109,7 +109,7 @@ class OrderServiceTests(TestCase):
         self.assertEqual(self.wallet.available_balance_cents, 10000)
 
     def test_insufficient_funds_rolls_back_order_and_hold(self):
-        with self.assertRaises(Exception):
+        with self.assertRaises(InsufficientFunds):
             place_order(
                 self.user.customer.pk,
                 self.plan.pk,
@@ -223,3 +223,33 @@ class OrderAdminTests(TestCase):
         self.client.force_login(admin_user)
         response = self.client.get("/admin/orders/order/")
         self.assertEqual(response.status_code, 200)
+
+    def test_order_and_item_snapshots_cannot_be_rewritten(self):
+        self.fund_wallet()
+        order = place_order(
+            self.user.customer.pk,
+            self.plan.pk,
+            idempotency_key="order-immutable-001",
+        )
+        item = order.items.get()
+
+        item.plan_name = "Changed plan"
+        with self.assertRaises(TypeError):
+            item.save()
+        with self.assertRaises(TypeError):
+            order.items.update(plan_name="Changed plan")
+
+        order.total_cents = 1
+        with self.assertRaises(TypeError):
+            order.save(update_fields=["total_cents"])
+
+    def test_invalid_order_state_transition_is_rejected(self):
+        self.fund_wallet()
+        order = place_order(
+            self.user.customer.pk,
+            self.plan.pk,
+            idempotency_key="order-transition-001",
+        )
+        order.status = Order.Status.ACTIVE
+        with self.assertRaises(ValueError):
+            order.save(update_fields=["status", "updated_at"])
