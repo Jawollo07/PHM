@@ -4,6 +4,7 @@ from decimal import Decimal
 
 from django.contrib.auth import get_user_model
 from django.test import TestCase
+from django.urls import reverse
 from django.utils import timezone
 
 from apps.catalog.models import HostingPlan, HostingProduct
@@ -53,6 +54,7 @@ class SubscriptionServiceTests(TestCase):
             fingerprint="c" * 64,
         )
         self.signer = lambda payload: b"subscription-test-signature"
+        self.client.force_login(self.user)
 
     def create_paid_subscription(self):
         credit_wallet(
@@ -167,3 +169,64 @@ class SubscriptionServiceTests(TestCase):
         self.assertEqual(subscription.status, Subscription.Status.PAST_DUE)
         self.assertEqual(self.wallet.balance_cents, balance_before)
         self.assertIsNotNone(subscription.past_due_since)
+
+    def test_customer_can_enable_and_disable_own_auto_renewal(self):
+        subscription = self.create_paid_subscription()
+        response = self.client.post(
+            reverse("subscription_action", args=[subscription.pk]),
+            {"action": "enable_auto_renew"},
+        )
+        self.assertRedirects(response, reverse("subscriptions"))
+        subscription.refresh_from_db()
+        self.assertTrue(subscription.auto_renew)
+
+        self.client.post(
+            reverse("subscription_action", args=[subscription.pk]),
+            {"action": "disable_auto_renew"},
+        )
+        subscription.refresh_from_db()
+        self.assertFalse(subscription.auto_renew)
+
+    def test_customer_can_schedule_cancellation_at_period_end(self):
+        subscription = self.create_paid_subscription()
+        self.client.post(
+            reverse("subscription_action", args=[subscription.pk]),
+            {"action": "cancel_at_period_end"},
+        )
+        subscription.refresh_from_db()
+        self.assertTrue(subscription.cancel_at_period_end)
+        self.assertFalse(subscription.auto_renew)
+        self.assertEqual(subscription.status, Subscription.Status.ACTIVE)
+
+    def test_customer_cannot_change_another_customers_subscription(self):
+        other = get_user_model().objects.create_user(
+            username="subscription-view-other",
+            email="subscription-view-other@example.com",
+            password="secure-test-password",
+        )
+        credit_wallet(
+            other.customer.wallet.pk,
+            5000,
+            description="Other subscription funding",
+            idempotency_key="other-subscription-view-funding",
+            signing_key_id=self.key.pk,
+            signer=self.signer,
+        )
+        order = place_order(
+            other.customer.pk,
+            self.plan.pk,
+            idempotency_key="other-subscription-view-order",
+        )
+        paid = confirm_order_payment(
+            order.pk,
+            signing_key_id=self.key.pk,
+            signer=self.signer,
+        )
+        subscription = Subscription.objects.get(order_item=paid.items.get())
+        response = self.client.post(
+            reverse("subscription_action", args=[subscription.pk]),
+            {"action": "enable_auto_renew"},
+        )
+        self.assertRedirects(response, reverse("subscriptions"))
+        subscription.refresh_from_db()
+        self.assertFalse(subscription.auto_renew)
