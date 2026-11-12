@@ -362,3 +362,31 @@ class LedgerCheckpointTests(TestCase):
                 signing_key_id=self.key.pk,
                 signer=self.signer,
             )
+
+
+class WalletSigningTests(TestCase):
+    def test_external_ed25519_signer_and_verifier_round_trip(self):
+        import base64
+
+        from cryptography.hazmat.primitives import serialization
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+        from django.test import override_settings
+        from apps.wallet.signing import sign_payload, verify_payload
+
+        private_key = Ed25519PrivateKey.generate()
+        raw_private = private_key.private_bytes(
+            encoding=serialization.Encoding.Raw,
+            format=serialization.PrivateFormat.Raw,
+            encryption_algorithm=serialization.NoEncryption(),
+        )
+        with override_settings(
+            WALLET_LEDGER_PRIVATE_KEY_B64=base64.b64encode(raw_private).decode("ascii")
+        ):
+            payload = b"PHM manual wallet adjustment"
+            signature = sign_payload(payload)
+            public_key = private_key.public_key().public_bytes(
+                encoding=serialization.Encoding.Raw,
+                format=serialization.PublicFormat.Raw,
+            )
+            self.assertTrue(verify_payload(public_key, payload, signature))
+            self.assertFalse(verify_payload(public_key, b"tampered", signature))
