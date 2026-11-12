@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="de">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>PHM – Hosting-Angebote</title>
+    <style>
+        body { margin: 0; padding: 2rem 1rem; background: #f3f6fb; color: #172033; font-family: system-ui, sans-serif; }
+        main { max-width: 1000px; margin: auto; }
+        header, .wallet, .product, .plan { background: white; border: 1px solid #e2e8f0; border-radius: 14px; padding: 1rem 1.25rem; }
+        header { display: flex; justify-content: space-between; gap: 1rem; align-items: center; margin-bottom: 1rem; }
+        .wallet { display: flex; gap: 2rem; flex-wrap: wrap; margin-bottom: 1.5rem; }
+        .wallet strong { display: block; font-size: 1.25rem; }
+        .product { margin: 1rem 0; }
+        .plans { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: .8rem; }
+        .plan { padding: 1rem; }
+        .price { font-size: 1.5rem; font-weight: 800; }
+        .muted { color: #64748b; font-size: .9rem; }
+        button { padding: .7rem 1rem; border: 0; border-radius: 8px; background: #3156a5; color: white; font-weight: 700; cursor: pointer; }
+        .notice { padding: .8rem 1rem; border-radius: 8px; background: #fff; margin: .5rem 0; }
+        ul { padding-left: 1.2rem; }
+    </style>
+</head>
+<body>
+<main>
+    <header><strong>PHM · Hosting</strong><nav><a href="{% url 'account' %}">Mein Konto</a> · <a href="{% url 'orders' %}">Meine Bestellungen</a></nav></header>
+    {% for message in messages %}<p class="notice" role="status">{{ message }}</p>{% endfor %}
+    <h1>Hosting-Angebote</h1>
+    <p class="muted">Alle Preise in EUR. Die Zahlung erfolgt ausschließlich über dein PHM-Guthaben.</p>
+    <section class="wallet">
+        <div>Kontostand<strong>{{ wallet_balance|floatformat:2 }} EUR</strong></div>
+        <div>Verfügbar<strong>{{ wallet_available|floatformat:2 }} EUR</strong></div>
+    </section>
+    {% for product in products %}
+        <section class="product">
+            <h2>{{ product.name }}</h2>
+            {% if product.description %}<p>{{ product.description }}</p>{% endif %}
+            <div class="plans">
+                {% for plan in product.available_plans %}
+                    <article class="plan">
+                        <h3>{{ plan.name }}</h3>
+                        {% if plan.description %}<p>{{ plan.description }}</p>{% endif %}
+                        <p class="price">{{ plan.price_eur|floatformat:2 }} EUR</p>
+                        <p class="muted">
+                            {% if plan.billing_interval_unit == "once" %}
+                                Einmalig
+                            {% else %}
+                                Alle {{ plan.billing_interval_count }} {{ plan.get_billing_interval_unit_display }}
+                            {% endif %}
+                            {% if plan.setup_fee_cents %} · Einrichtung: {{ plan.setup_fee_eur|floatformat:2 }} EUR{% endif %}
+                        </p>
+                        {% if plan.resource_limits %}
+                            <ul>{% for key, value in plan.resource_limits.items %}<li>{{ key }}: {{ value }}</li>{% endfor %}</ul>
+                        {% endif %}
+                        <form method="post" action="{% url 'purchase_plan' plan.id %}">
+                            {% csrf_token %}
+                            <input type="hidden" name="idempotency_key" value="{{ new_idempotency_key }}">
+                            <button type="submit">Jetzt bestellen</button>
+                        </form>
+                    </article>
+                {% endfor %}
+            </div>
+        </section>
+    {% empty %}
+        <p>Aktuell sind keine Hosting-Angebote verfügbar.</p>
+    {% endfor %}
+</main>
+</body>
+</html>
