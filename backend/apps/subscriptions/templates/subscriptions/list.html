@@ -21,7 +21,7 @@ button.secondary{background:#e2e8f0;color:#172033}.notice{padding:.75rem 1rem;ba
     <h2>{{ subscription.plan.name }}</h2>
     <p>Status: <strong>{{ subscription.get_status_display }}</strong></p>
     <p>Preis: {{ subscription.price_eur|floatformat:2 }} EUR je
-        {{ subscription.billing_interval_count }} {{ subscription.billing_interval_unit }}</p>
+        {{ subscription.billing_interval_count }} {{ subscription.get_billing_interval_unit_display }}</p>
     <p>Aktueller Zeitraum: {{ subscription.current_period_start|date:"d.m.Y" }} – {{ subscription.current_period_end|date:"d.m.Y" }}</p>
     <p>Nächste Fälligkeit: {{ subscription.next_billing_at|date:"d.m.Y H:i" }}</p>
     <p>Automatische Verlängerung: {% if subscription.auto_renew %}Aktiv{% else %}Deaktiviert{% endif %}</p>
