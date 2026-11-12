@@ -8,7 +8,6 @@ from django.core.exceptions import ImproperlyConfigured, PermissionDenied
 from django.http import HttpResponseRedirect
 from django.shortcuts import render
 from django.urls import path, reverse
-from django.utils.html import format_html
 from django.utils.module_loading import import_string
 
 from .models import (
@@ -71,7 +70,6 @@ class WalletAdmin(admin.ModelAdmin):
         "currency",
         "balance_cents",
         "created_at",
-        "manual_adjustment_link",
     )
     search_fields = ("id", "customer__user__username", "customer__user__email")
     readonly_fields = tuple(field.name for field in Wallet._meta.fields)
@@ -85,20 +83,6 @@ class WalletAdmin(admin.ModelAdmin):
             ),
         ]
         return custom_urls + super().get_urls()
-
-    @admin.display(description="Guthaben verwalten")
-    def manual_adjustment_link(self, obj):
-        request = getattr(self, "_current_request", None)
-        if not obj or request is None or not request.user.has_perm(
-            "wallet.adjust_wallet_balance"
-        ):
-            return "—"
-        url = reverse("admin:wallet_manual_adjustment")
-        return format_html(
-            '<a class="button" href="{}?wallet={}">Guthaben ändern</a>',
-            url,
-            obj.pk,
-        )
 
     def changelist_view(self, request, extra_context=None):
         self._current_request = request
