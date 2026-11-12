@@ -429,3 +429,82 @@ class ManualWalletAdjustmentFormTests(TestCase):
             "idempotency_key": "7f8e8a0b-5db0-4c29-8df0-55bb4d6ed091",
         })
         self.assertFalse(form.is_valid())
+
+
+class ManualWalletAdjustmentAdminTests(TestCase):
+    def setUp(self):
+        from django.contrib.auth.models import Permission
+        from django.contrib.contenttypes.models import ContentType
+
+        self.user = get_user_model().objects.create_user(
+            username="wallet-admin",
+            email="wallet-admin@example.com",
+            password="secure-test-password",
+            is_staff=True,
+        )
+        content_type = ContentType.objects.get(app_label="wallet", model="wallet")
+        permission = Permission.objects.get(
+            content_type=content_type,
+            codename="adjust_wallet_balance",
+        )
+        self.user.user_permissions.add(permission)
+        self.wallet = self.user.customer.wallet
+        self.client.force_login(self.user)
+
+    def test_manual_adjustment_admin_route_posts_signed_credit(self):
+        import base64
+        import hashlib
+
+        from cryptography.hazmat.primitives import serialization
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+        from django.test import override_settings
+        from django.urls import reverse
+
+        private_key = Ed25519PrivateKey.generate()
+        raw_private = private_key.private_bytes(
+            encoding=serialization.Encoding.Raw,
+            format=serialization.PrivateFormat.Raw,
+            encryption_algorithm=serialization.NoEncryption(),
+        )
+        public_key = private_key.public_key().public_bytes(
+            encoding=serialization.Encoding.Raw,
+            format=serialization.PublicFormat.Raw,
+        )
+        signing_key = LedgerSigningKey.objects.create(
+            key_id="wallet-admin-test-key",
+            label="Wallet admin integration test key",
+            public_key=public_key,
+            fingerprint=hashlib.sha256(public_key).hexdigest(),
+            status=LedgerSigningKey.Status.ACTIVE,
+        )
+        url = reverse("admin:wallet_wallet_manual_adjustment")
+        with override_settings(
+            WALLET_LEDGER_SIGNER="apps.wallet.signing.sign_payload",
+            WALLET_LEDGER_KEY_ID=signing_key.key_id,
+            WALLET_LEDGER_PRIVATE_KEY_B64=base64.b64encode(raw_private).decode("ascii"),
+        ):
+            get_response = self.client.get(url)
+            self.assertEqual(get_response.status_code, 200)
+            response = self.client.post(url, {
+                "wallet": str(self.wallet.pk),
+                "direction": "credit",
+                "amount_eur": "12.34",
+                "reason": "Admin integration test credit",
+                "reference": "TEST-ADMIN-001",
+                "idempotency_key": "7f8e8a0b-5db0-4c29-8df0-55bb4d6ed099",
+            })
+
+        self.assertRedirects(response, reverse("admin:wallet_wallet_changelist"))
+        self.wallet.refresh_from_db()
+        self.assertEqual(self.wallet.balance_cents, 1234)
+        entry = self.wallet.transactions.get()
+        self.assertEqual(entry.amount_cents, 1234)
+        self.assertEqual(entry.reference, "TEST-ADMIN-001")
+        self.assertEqual(entry.metadata["admin_user_id"], str(self.user.pk))
+
+    def test_manual_adjustment_admin_route_requires_specific_permission(self):
+        from django.urls import reverse
+
+        self.user.user_permissions.clear()
+        response = self.client.get(reverse("admin:wallet_wallet_manual_adjustment"))
+        self.assertEqual(response.status_code, 403)
