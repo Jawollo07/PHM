@@ -49,7 +49,7 @@ class Migration(migrations.Migration):
             model_name="pelicanserver",
             constraint=models.CheckConstraint(
                 condition=models.Q(("status__in", ["installing", "installed"]), ("panel_server_id__isnull", False))
-                | ~models.Q(("status__in", ["provisioning", "installing", "installed"])),
+                | ~models.Q(("status__in", ["installing", "installed"])),
                 name="pelican_server_remote_id_required",
             ),
         ),
