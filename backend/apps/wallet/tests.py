@@ -162,3 +162,105 @@ class WalletServiceTests(TestCase):
         self.assertEqual(self.wallet.balance_cents, 700)
         self.assertEqual(hold.status, WalletHold.Status.CAPTURED)
         self.assertEqual(self.wallet.available_balance_cents, 700)
+
+
+
+class LedgerCheckpointTests(TestCase):
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(
+            username="checkpoint-user",
+            email="checkpoint@example.com",
+            password="secure-test-password",
+        )
+        self.wallet = self.user.customer.wallet
+        self.key = LedgerSigningKey.objects.create(
+            key_id="checkpoint-key",
+            label="Checkpoint test key",
+            public_key=b"checkpoint-public-key",
+            fingerprint="d" * 64,
+        )
+        self.signer = lambda payload: b"checkpoint-signature"
+        self.verifier = lambda public_key, payload, signature: (
+            public_key == b"checkpoint-public-key"
+            and signature == b"checkpoint-signature"
+        )
+
+    def test_checkpoint_captures_and_verifies_global_ledger_state(self):
+        from apps.wallet.checkpoints import (
+            create_ledger_checkpoint,
+            verify_ledger_checkpoint,
+        )
+        from apps.wallet.services import credit_wallet
+
+        credit_wallet(
+            self.wallet.pk,
+            1250,
+            description="Checkpoint fixture",
+            idempotency_key="checkpoint-credit-1",
+            signing_key_id=self.key.pk,
+            signer=lambda payload: b"transaction-signature",
+        )
+        checkpoint = create_ledger_checkpoint(
+            signing_key_id=self.key.pk,
+            signer=self.signer,
+        )
+
+        self.assertEqual(checkpoint.checkpoint_number, 1)
+        self.assertEqual(checkpoint.transaction_count, 1)
+        self.assertEqual(checkpoint.wallet_count, 1)
+        self.assertTrue(
+            verify_ledger_checkpoint(
+                checkpoint.pk,
+                verifier=self.verifier,
+                compare_current_state=True,
+            )
+        )
+
+    def test_checkpoint_chain_links_consecutive_snapshots(self):
+        from apps.wallet.checkpoints import (
+            create_ledger_checkpoint,
+            verify_ledger_checkpoint,
+        )
+
+        first = create_ledger_checkpoint(
+            signing_key_id=self.key.pk,
+            signer=self.signer,
+        )
+        second = create_ledger_checkpoint(
+            signing_key_id=self.key.pk,
+            signer=self.signer,
+        )
+
+        self.assertEqual(second.checkpoint_number, 2)
+        self.assertEqual(second.previous_checkpoint_hash, first.checkpoint_hash)
+        self.assertTrue(
+            verify_ledger_checkpoint(
+                second.pk,
+                verifier=self.verifier,
+                compare_current_state=True,
+            )
+        )
+
+    def test_checkpoint_refuses_balance_not_backed_by_ledger(self):
+        from apps.wallet.checkpoints import create_ledger_checkpoint
+
+        self.wallet.balance_cents = 100
+        self.wallet.save(update_fields=["balance_cents", "updated_at"])
+
+        with self.assertRaises(ValueError):
+            create_ledger_checkpoint(
+                signing_key_id=self.key.pk,
+                signer=self.signer,
+            )
+
+    def test_checkpoint_cannot_be_created_with_retired_key(self):
+        from apps.wallet.checkpoints import create_ledger_checkpoint
+
+        self.key.status = LedgerSigningKey.Status.RETIRED
+        self.key.save(update_fields=["status"])
+
+        with self.assertRaises(ValueError):
+            create_ledger_checkpoint(
+                signing_key_id=self.key.pk,
+                signer=self.signer,
+            )
