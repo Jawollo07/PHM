@@ -3,7 +3,6 @@ import json
 from typing import Callable
 
 from django.db import transaction
-from django.db.models import Count, OuterRef, Subquery
 from django.utils import timezone
 
 from .models import GENESIS_HASH, LedgerCheckpoint, LedgerSigningKey, Wallet, WalletTransaction
