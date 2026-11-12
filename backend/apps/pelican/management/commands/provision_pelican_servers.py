@@ -1,4 +1,6 @@
 from django.core.management.base import BaseCommand
+from django.db.models import Q
+from django.utils import timezone
 
 from apps.orders.models import Order
 from apps.pelican.models import PelicanServer
@@ -29,11 +31,14 @@ class Command(BaseCommand):
 
         statuses = [PelicanServer.Status.PENDING, PelicanServer.Status.PROVISIONING,
                     PelicanServer.Status.INSTALLING]
+        queue = PelicanServer.objects.filter(status__in=statuses)
         if options["retry_failed"]:
-            statuses.append(PelicanServer.Status.FAILED)
+            queue = queue | PelicanServer.objects.filter(
+                status=PelicanServer.Status.FAILED,
+                next_retry_at__lte=timezone.now(),
+            )
         ids = list(
-            PelicanServer.objects.filter(status__in=statuses)
-            .order_by("created_at").values_list("pk", flat=True)[:limit]
+            queue.order_by("created_at").values_list("pk", flat=True).distinct()[:limit]
         )
         installed = failed = pending = 0
         for record_id in ids:
