@@ -3,9 +3,14 @@ import secrets
 import string
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
-from urllib.request import Request, urlopen
+from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 from django.conf import settings
+
+
+class _NoRedirectHandler(HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
 
 
 class PelicanAPIError(Exception):
@@ -20,7 +25,7 @@ class PelicanClient:
     def __init__(self):
         self.base_url = getattr(settings, "PELICAN_PANEL_URL", "").rstrip("/")
         self.token = getattr(settings, "PELICAN_APPLICATION_API_TOKEN", "")
-        self.timeout = int(getattr(settings, "PELICAN_API_TIMEOUT", 10))
+        self.timeout = min(max(int(getattr(settings, "PELICAN_API_TIMEOUT", 10)), 1), 30)
         if not self.base_url or not self.token:
             raise PelicanAPIError("not_configured")
         if not self.base_url.startswith("https://"):
@@ -35,7 +40,10 @@ class PelicanClient:
             "Content-Type": "application/json",
         })
         try:
-            with urlopen(request, timeout=self.timeout) as response:
+            # Never follow redirects: the Application API bearer token must not be
+            # forwarded to another host or downgraded to plain HTTP.
+            opener = build_opener(_NoRedirectHandler())
+            with opener.open(request, timeout=self.timeout) as response:
                 body = response.read(2_000_000)
                 return json.loads(body.decode("utf-8")) if body else {}
         except HTTPError as exc:
