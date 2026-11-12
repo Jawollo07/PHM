@@ -75,3 +75,28 @@ class PelicanClientConfigurationTests(SimpleTestCase):
         with self.assertRaises(PelicanAPIError) as raised:
             PelicanClient()
         self.assertEqual(raised.exception.code, "https_required")
+
+
+class PelicanPasswordAPIClientTests(SimpleTestCase):
+    @override_settings(PELICAN_PANEL_URL="https://panel.example.com", PELICAN_APPLICATION_API_TOKEN="test-token")
+    def test_password_update_reads_required_fields_and_patches_them_with_password(self):
+        from unittest.mock import patch
+
+        client = PelicanClient()
+        with patch.object(client, "_request", side_effect=[
+            {"attributes": {
+                "email": "customer@example.com",
+                "username": "customer-123",
+                "first_name": "Customer",
+                "last_name": "PHM",
+            }},
+            {},
+        ]) as request:
+            client.update_user_password(123, "New-Strong-Password-2026!")
+        self.assertEqual(request.call_args_list[0].args, ("GET", "users/123"))
+        method, path = request.call_args_list[1].args[:2]
+        payload = request.call_args_list[1].args[2]
+        self.assertEqual((method, path), ("PATCH", "users/123"))
+        self.assertEqual(payload["password"], "New-Strong-Password-2026!")
+        self.assertEqual(payload["email"], "customer@example.com")
+
