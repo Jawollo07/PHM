@@ -184,3 +184,35 @@ class AccountViewTests(TestCase):
         self.assertContains(response, 'Diese E-Mail-Adresse wird bereits verwendet.')
         self.user.refresh_from_db()
         self.assertEqual(self.user.email, 'test@example.com')
+
+    def test_email_change_issues_new_hashed_verification_token(self):
+        import hashlib
+        import re
+
+        from django.core import mail
+        from apps.auth.models import EmailVerification
+
+        response = self.client.post(
+            "/account/",
+            {
+                "username": "testuser",
+                "email": "changed-address@example.com",
+                "phone_number": "",
+                "language": "de",
+            },
+        )
+
+        self.assertRedirects(response, "/account/")
+        self.user.refresh_from_db()
+        self.assertFalse(self.user.email_verified)
+        verification = EmailVerification.objects.get(
+            user=self.user,
+            email="changed-address@example.com",
+            purpose=EmailVerification.Purpose.EMAIL_CHANGE,
+        )
+        self.assertEqual(len(mail.outbox), 1)
+        token = re.search(r"/auth/verify/([^/]+)", mail.outbox[0].body).group(1)
+        self.assertEqual(
+            verification.token_hash,
+            hashlib.sha256(token.encode("utf-8")).hexdigest(),
+        )
