@@ -54,7 +54,7 @@
                         {% endif %}
                         <form method="post" action="{% url 'purchase_plan' plan.id %}">
                             {% csrf_token %}
-                            <input type="hidden" name="idempotency_key" value="{{ new_idempotency_key }}">
+                            <input type="hidden" name="idempotency_key" value="{{ plan.checkout_idempotency_key }}">
                             <button type="submit">Jetzt bestellen</button>
                         </form>
                     </article>
