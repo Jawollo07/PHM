@@ -100,6 +100,7 @@ def login(request):
     username = request.POST.get("username", "").strip()
     password = request.POST.get("password", "")
     user = authenticate(request, username=username, password=password)
+    error = None
     if user is not None:
         try:
             customer = user.customer
