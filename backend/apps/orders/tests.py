@@ -253,3 +253,33 @@ class OrderAdminTests(TestCase):
         order.status = Order.Status.ACTIVE
         with self.assertRaises(ValueError):
             order.save(update_fields=["status", "updated_at"])
+
+    def test_database_rejects_mutation_of_order_history(self):
+        from django.db import DatabaseError, connection, transaction
+
+        self.fund_wallet()
+        order = place_order(
+            self.user.customer.pk,
+            self.plan.pk,
+            idempotency_key="order-db-immutable-001",
+        )
+        item = order.items.get()
+
+        with self.assertRaises(DatabaseError), transaction.atomic():
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "UPDATE order_items SET plan_name = %s WHERE id = %s",
+                    ["Tampered", item.pk],
+                )
+        with self.assertRaises(DatabaseError), transaction.atomic():
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "DELETE FROM order_items WHERE id = %s",
+                    [item.pk],
+                )
+        with self.assertRaises(DatabaseError), transaction.atomic():
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "DELETE FROM orders WHERE id = %s",
+                    [str(order.pk)],
+                )
