@@ -118,6 +118,14 @@ class Order(models.Model):
                 ),
                 name="order_paid_requires_timestamp",
             ),
+            models.CheckConstraint(
+                condition=(
+                    Q(status="paid", total_cents=0, paid_transaction__isnull=True)
+                    | Q(status="paid", total_cents__gt=0, paid_transaction__isnull=False)
+                    | ~Q(status="paid")
+                ),
+                name="order_paid_payment_consistent",
+            ),
         ]
         indexes = [
             models.Index(fields=["customer", "status", "created_at"], name="order_customer_status_idx"),
@@ -146,8 +154,13 @@ class Order(models.Model):
             raise TypeError("An order wallet hold cannot be replaced.")
         if original.paid_transaction_id and original.paid_transaction_id != self.paid_transaction_id:
             raise TypeError("An order payment transaction cannot be replaced.")
-        if self.status == self.Status.PAID and self.paid_at is None:
-            raise ValueError("Paid orders require a paid_at timestamp.")
+        if self.status == self.Status.PAID:
+            if self.paid_at is None:
+                raise ValueError("Paid orders require a paid_at timestamp.")
+            if self.total_cents > 0 and self.paid_transaction_id is None:
+                raise ValueError("Paid orders require a signed wallet transaction.")
+            if self.total_cents == 0 and self.paid_transaction_id is not None:
+                raise ValueError("Free orders cannot have a zero-value wallet transaction.")
         return super().save(*args, **kwargs)
 
     def delete(self, *args, **kwargs):
