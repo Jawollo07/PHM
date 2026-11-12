@@ -38,7 +38,7 @@ POSTGRES_STATEMENTS = (
     """CREATE OR REPLACE FUNCTION phm_guard_subscription_history()
     RETURNS trigger
     LANGUAGE plpgsql
-    AS $$
+    AS $phm$
     BEGIN
         IF TG_OP = 'DELETE' THEN
             RAISE EXCEPTION 'Subscription history is immutable.';
@@ -64,7 +64,7 @@ POSTGRES_STATEMENTS = (
         END IF;
         RETURN NEW;
     END;
-    $""",
+    $phm$""",
     """CREATE TRIGGER subscriptions_guard_history
     BEFORE UPDATE OR DELETE ON subscriptions
     FOR EACH ROW EXECUTE FUNCTION phm_guard_subscription_history()""",
