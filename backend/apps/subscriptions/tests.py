@@ -12,6 +12,10 @@ from apps.orders.services import place_order, confirm_order_payment
 from apps.wallet.models import LedgerSigningKey
 from apps.wallet.services import credit_wallet
 
+def fake_signer(payload):
+    return b"test-signature"
+
+
 from apps.subscriptions.models import Subscription
 from apps.subscriptions.services import (
     SubscriptionNotDue,
@@ -230,3 +234,42 @@ class SubscriptionServiceTests(TestCase):
         self.assertRedirects(response, reverse("subscriptions"))
         subscription.refresh_from_db()
         self.assertFalse(subscription.auto_renew)
+
+    def test_renewal_command_processes_due_opted_in_subscriptions(self):
+        from datetime import timedelta
+        from django.core.management import call_command
+        from django.test import override_settings
+
+        subscription = self.create_paid_subscription()
+        set_auto_renew(subscription.pk, self.user.customer.pk, True)
+        due = timezone.now() - timedelta(days=1)
+        subscription.current_period_end = due
+        subscription.next_billing_at = due
+        subscription.save(update_fields=["current_period_end", "next_billing_at", "updated_at"])
+
+        balance_before = self.wallet.balance_cents
+        with override_settings(
+            WALLET_LEDGER_KEY_ID=self.key.key_id,
+            WALLET_LEDGER_SIGNER="apps.subscriptions.tests.fake_signer",
+        ):
+            call_command("process_subscription_renewals")
+
+        subscription.refresh_from_db()
+        self.wallet.refresh_from_db()
+        self.assertEqual(subscription.status, Subscription.Status.ACTIVE)
+        self.assertGreater(subscription.next_billing_at, timezone.now())
+        self.assertEqual(self.wallet.balance_cents, balance_before - subscription.price_cents)
+
+    def test_renewal_command_expires_non_auto_renewing_contracts(self):
+        from datetime import timedelta
+        from django.core.management import call_command
+
+        subscription = self.create_paid_subscription()
+        due = timezone.now() - timedelta(days=1)
+        subscription.current_period_end = due
+        subscription.next_billing_at = due
+        subscription.save(update_fields=["current_period_end", "next_billing_at", "updated_at"])
+
+        call_command("process_subscription_renewals")
+        subscription.refresh_from_db()
+        self.assertEqual(subscription.status, Subscription.Status.EXPIRED)
