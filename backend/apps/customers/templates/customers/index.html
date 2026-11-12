@@ -113,6 +113,41 @@
         .profile-name { margin: 0 0 .2rem; font-weight: 750; }
         .profile-email { margin: 0; color: #68758a; font-size: .92rem; }
 
+        .wallet-card { grid-column: 1 / -1; }
+        .wallet-overview {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: .85rem;
+            margin-bottom: 1.25rem;
+        }
+        .wallet-metric {
+            padding: 1rem;
+            border: 1px solid #e8edf5;
+            border-radius: .8rem;
+            background: #f8faff;
+        }
+        .wallet-metric strong {
+            display: block;
+            margin-top: .35rem;
+            color: #243b70;
+            font-size: clamp(1.1rem, 3vw, 1.45rem);
+            letter-spacing: -.025em;
+        }
+        .ledger-list { display: grid; gap: .7rem; }
+        .ledger-entry {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto;
+            gap: .3rem 1rem;
+            padding: .8rem 0;
+            border-top: 1px solid #edf0f5;
+        }
+        .ledger-entry:first-child { border-top: 0; }
+        .ledger-description { color: #29364e; font-weight: 700; }
+        .ledger-meta { color: #78849a; font-size: .8rem; }
+        .ledger-amount { align-self: center; font-weight: 800; font-variant-numeric: tabular-nums; }
+        .ledger-balance { grid-column: 1 / -1; color: #78849a; font-size: .8rem; }
+        .wallet-note { margin: 0 0 1rem; color: #6c7890; font-size: .85rem; line-height: 1.5; }
+
         .grid {
             display: grid;
             grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -345,6 +380,45 @@
         </details>
 
         <div class="grid">
+            <section class="card wallet-card" aria-labelledby="wallet-heading">
+                <div class="section-heading">
+                    <h2 id="wallet-heading">Mein Guthaben</h2>
+                    <span class="tag">EUR-Wallet</span>
+                </div>
+                {% if wallet_details %}
+                    <div class="wallet-overview">
+                        <div class="wallet-metric">
+                            <span class="label">Kontostand</span>
+                            <strong>{{ wallet_details.balance }}</strong>
+                        </div>
+                        <div class="wallet-metric">
+                            <span class="label">Verfügbar</span>
+                            <strong>{{ wallet_details.available_balance }}</strong>
+                        </div>
+                        <div class="wallet-metric">
+                            <span class="label">Reserviert</span>
+                            <strong>{{ wallet_details.reserved_balance }}</strong>
+                        </div>
+                    </div>
+                    <p class="wallet-note">Dein Kontostand und deine Buchungshistorie sind hier einsehbar. Guthabenänderungen werden derzeit ausschließlich durch Administratoren manuell vorgenommen; Online-Zahlungsmethoden sind nicht aktiviert.</p>
+                    <div class="ledger-list" aria-label="Letzte Guthabenbuchungen">
+                        {% for entry in wallet_details.transactions %}
+                            <div class="ledger-entry">
+                                <div>
+                                    <div class="ledger-description">{{ entry.description }}</div>
+                                    <div class="ledger-meta">{{ entry.date|date:"d.m.Y H:i" }} · {{ entry.type }}{% if entry.reference %} · Ref. {{ entry.reference }}{% endif %}</div>
+                                </div>
+                                <div class="ledger-amount">{{ entry.amount }}</div>
+                                <div class="ledger-balance">Kontostand danach: {{ entry.balance_after }}</div>
+                            </div>
+                        {% empty %}
+                            <p class="empty">Es wurden noch keine Guthabenbuchungen vorgenommen.</p>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    <p class="empty">Für dein Konto ist derzeit kein Wallet verfügbar.</p>
+                {% endif %}
+            </section>
             <section class="card" aria-labelledby="contact-heading">
                 <div class="section-heading">
                     <h2 id="contact-heading">Kontaktdaten</h2>
