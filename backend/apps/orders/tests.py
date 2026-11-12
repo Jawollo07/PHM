@@ -213,18 +213,6 @@ class OrderServiceTests(TestCase):
         with self.assertRaises(OrderNotCancellable):
             cancel_pending_order(order.pk)
 
-
-class OrderAdminTests(TestCase):
-    def test_orders_are_read_only_in_admin(self):
-        admin_user = get_user_model().objects.create_superuser(
-            username="order-admin",
-            email="order-admin@example.com",
-            password="secure-test-password",
-        )
-        self.client.force_login(admin_user)
-        response = self.client.get("/admin/orders/order/")
-        self.assertEqual(response.status_code, 200)
-
     def test_order_and_item_snapshots_cannot_be_rewritten(self):
         self.fund_wallet()
         order = place_order(
@@ -284,6 +272,18 @@ class OrderAdminTests(TestCase):
                     "DELETE FROM orders WHERE id = %s",
                     [str(order.pk)],
                 )
+
+
+class OrderAdminTests(TestCase):
+    def test_orders_are_read_only_in_admin(self):
+        admin_user = get_user_model().objects.create_superuser(
+            username="order-admin",
+            email="order-admin@example.com",
+            password="secure-test-password",
+        )
+        self.client.force_login(admin_user)
+        response = self.client.get("/admin/orders/order/")
+        self.assertEqual(response.status_code, 200)
 
 
 class CustomerOrderViewsTests(TestCase):
