@@ -20,8 +20,17 @@ from .models import (
 from .services import InsufficientFunds, InvalidLedgerOperation, adjust_wallet_balance
 
 
+class WalletChoiceField(forms.ModelChoiceField):
+    def label_from_instance(self, wallet):
+        user = wallet.customer.user
+        return (
+            f"{user.get_username()} ({user.email}) — "
+            f"{wallet.balance_cents / 100:.2f} EUR"
+        )
+
+
 class ManualWalletAdjustmentForm(forms.Form):
-    wallet = forms.ModelChoiceField(
+    wallet = WalletChoiceField(
         queryset=Wallet.objects.select_related("customer__user").order_by(
             "customer__user__username"
         ),
