@@ -25,6 +25,7 @@ class Migration(migrations.Migration):
                 ("last_error_code", models.CharField(blank=True, default="", max_length=64)),
                 ("attempts", models.PositiveIntegerField(default=0)),
                 ("last_attempt_at", models.DateTimeField(blank=True, null=True)),
+                ("next_retry_at", models.DateTimeField(blank=True, null=True)),
                 ("provisioned_at", models.DateTimeField(blank=True, null=True)),
                 ("installed_at", models.DateTimeField(blank=True, null=True)),
                 ("created_at", models.DateTimeField(auto_now_add=True)),
