@@ -35,6 +35,12 @@ def _ensure_order_subscriptions(order):
         create_subscription_for_order_item(item.pk)
 
 
+def _enqueue_pelican_servers(order):
+    from apps.pelican.services import enqueue_order_provisioning
+
+    enqueue_order_provisioning(order.pk)
+
+
 @transaction.atomic
 def place_order(
     customer_id,
@@ -119,6 +125,7 @@ def confirm_order_payment(order_id, *, signing_key_id, signer) -> Order:
     order = Order.objects.select_for_update().select_related("wallet_hold").get(pk=order_id)
     if order.status == Order.Status.PAID:
         _ensure_order_subscriptions(order)
+        _enqueue_pelican_servers(order)
         return order
     if order.status != Order.Status.PENDING_PAYMENT or order.wallet_hold_id is None:
         raise OrderNotPayable("This order is not awaiting wallet payment.")
@@ -138,6 +145,7 @@ def confirm_order_payment(order_id, *, signing_key_id, signer) -> Order:
     order.paid_at = timezone.now()
     order.save(update_fields=["status", "paid_transaction", "paid_at", "updated_at"])
     _ensure_order_subscriptions(order)
+    _enqueue_pelican_servers(order)
     return order
 
 
@@ -174,6 +182,8 @@ def purchase_plan(
         quantity=quantity,
     )
     if order.status == Order.Status.PAID:
+        _ensure_order_subscriptions(order)
+        _enqueue_pelican_servers(order)
         return order
     if signing_key_id is None or signer is None:
         raise OrderNotPayable("Wallet signing is not configured; the order was not charged.")
