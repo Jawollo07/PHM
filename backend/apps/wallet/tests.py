@@ -97,6 +97,19 @@ class WalletModelTests(TestCase):
         with self.assertRaises(TypeError):
             entry.delete()
 
+        with self.assertRaises(DatabaseError), transaction.atomic():
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "UPDATE wallet_transactions SET description = %s WHERE id = %s",
+                    ["Raw SQL tampering", str(entry.pk)],
+                )
+        with self.assertRaises(DatabaseError), transaction.atomic():
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "DELETE FROM wallet_transactions WHERE id = %s",
+                    [str(entry.pk)],
+                )
+
 
 class WalletServiceTests(TestCase):
     def setUp(self):
