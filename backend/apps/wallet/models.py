@@ -115,6 +115,9 @@ class Wallet(models.Model):
         db_table = "wallets"
         verbose_name = "Wallet"
         verbose_name_plural = "Wallets"
+        permissions = [
+            ("adjust_wallet_balance", "Can manually adjust customer wallet balances"),
+        ]
 
         constraints = [
             models.CheckConstraint(
