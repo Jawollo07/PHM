@@ -60,6 +60,7 @@ def _post_locked(
     signer: Signer,
     reference: str = "",
     metadata: dict | None = None,
+    reserved_hold_id=None,
 ) -> WalletTransaction:
     _validate_direction(transaction_type, amount_cents)
     if not idempotency_key or len(idempotency_key) > 128:
@@ -87,8 +88,19 @@ def _post_locked(
     new_balance = wallet.balance_cents + amount_cents
     if new_balance < 0:
         raise InsufficientFunds("The wallet balance is insufficient.")
-    if amount_cents < 0 and wallet.available_balance_cents < abs(amount_cents):
-        raise InsufficientFunds("The available balance is reserved or insufficient.")
+    if amount_cents < 0:
+        available_balance = wallet.available_balance_cents
+        if reserved_hold_id is not None:
+            reserved_hold = WalletHold.objects.get(
+                pk=reserved_hold_id,
+                wallet=wallet,
+                status=WalletHold.Status.ACTIVE,
+            )
+            # The hold being captured is already reserved; make only that
+            # reservation spendable for its own capture.
+            available_balance += reserved_hold.amount_cents
+        if available_balance < abs(amount_cents):
+            raise InsufficientFunds("The available balance is reserved or insufficient.")
 
     previous = wallet.transactions.order_by("-sequence_number").first()
     sequence_number = previous.sequence_number + 1 if previous else 1
@@ -273,6 +285,7 @@ def capture_hold(hold_id, *, signing_key_id, signer: Signer) -> WalletTransactio
         signer=signer,
         reference=hold.reference,
         metadata={**hold.metadata, "hold_id": str(hold.pk)},
+        reserved_hold_id=hold.pk,
     )
     hold.status = WalletHold.Status.CAPTURED
     hold.captured_transaction = entry
