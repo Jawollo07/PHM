@@ -8,6 +8,7 @@ from django.core.exceptions import ImproperlyConfigured, PermissionDenied
 from django.http import HttpResponseRedirect
 from django.shortcuts import render
 from django.urls import path, reverse
+from django.utils.html import format_html
 from django.utils.module_loading import import_string
 
 from .models import (
@@ -20,12 +21,16 @@ from .models import (
 from .services import InsufficientFunds, InvalidLedgerOperation, adjust_wallet_balance
 
 
+def eur(cents):
+    return f"{(Decimal(cents) / Decimal('100')):,.2f} EUR".replace(",", "X").replace(".", ",").replace("X", ".")
+
+
 class WalletChoiceField(forms.ModelChoiceField):
     def label_from_instance(self, wallet):
         user = wallet.customer.user
         return (
             f"{user.get_username()} ({user.email}) — "
-            f"{wallet.balance_cents / 100:.2f} EUR"
+            f"{eur(wallet.balance_cents)}"
         )
 
 
@@ -74,13 +79,19 @@ class ManualWalletAdjustmentForm(forms.Form):
 class WalletAdmin(admin.ModelAdmin):
     change_list_template = "admin/wallet/wallet/change_list.html"
     list_display = (
-        "id",
-        "customer",
+        "customer_account",
+        "balance_eur",
+        "available_balance_eur",
         "currency",
-        "balance_cents",
+        "manual_adjustment_link",
         "created_at",
     )
-    search_fields = ("id", "customer__user__username", "customer__user__email")
+    search_fields = (
+        "id",
+        "customer__user__username",
+        "customer__user__email",
+    )
+    list_select_related = ("customer__user",)
     readonly_fields = tuple(field.name for field in Wallet._meta.fields)
 
     def get_urls(self):
@@ -92,6 +103,36 @@ class WalletAdmin(admin.ModelAdmin):
             ),
         ]
         return custom_urls + super().get_urls()
+
+    def get_list_display(self, request):
+        columns = list(super().get_list_display(request))
+        if request.user.has_perm("wallet.adjust_wallet_balance"):
+            columns.insert(columns.index("created_at"), "manual_adjustment_link")
+        else:
+            columns.remove("manual_adjustment_link")
+        return tuple(columns)
+
+    @admin.display(description="Kunde", ordering="customer__user__username")
+    def customer_account(self, obj):
+        user = obj.customer.user
+        return f"{user.get_username()} ({user.email})"
+
+    @admin.display(description="Kontostand", ordering="balance_cents")
+    def balance_eur(self, obj):
+        return eur(obj.balance_cents)
+
+    @admin.display(description="Verfügbar")
+    def available_balance_eur(self, obj):
+        return eur(obj.available_balance_cents)
+
+    @admin.display(description="Aktion")
+    def manual_adjustment_link(self, obj):
+        url = reverse("admin:wallet_wallet_manual_adjustment")
+        return format_html(
+            '<a class="button" href="{}?wallet={}">Guthaben verwalten</a>',
+            url,
+            obj.pk,
+        )
 
     def changelist_view(self, request, extra_context=None):
         extra_context = extra_context or {}
@@ -117,7 +158,7 @@ class WalletAdmin(admin.ModelAdmin):
                     raise ImproperlyConfigured(
                         "WALLET_LEDGER_SIGNER ist nicht konfiguriert. "
                         "Manuelle Buchungen bleiben bis zur Einrichtung des "
-                        "externen Signaturdienstes deaktiviert."
+                        "Signaturdienstes deaktiviert."
                     )
                 signer = import_string(signer_path)
                 signing_key = LedgerSigningKey.objects.get(
@@ -155,8 +196,7 @@ class WalletAdmin(admin.ModelAdmin):
                     messages.success(
                         request,
                         f"Buchung #{entry.sequence_number} gespeichert. "
-                        f"Neuer Kontostand: "
-                        f"{entry.balance_after_cents / 100:.2f} EUR.",
+                        f"Neuer Kontostand: {eur(entry.balance_after_cents)}.",
                     )
                     return HttpResponseRedirect(
                         reverse("admin:wallet_wallet_changelist")
@@ -177,7 +217,7 @@ class WalletAdmin(admin.ModelAdmin):
                 form.add_error(
                     None,
                     "Die Buchung konnte nicht sicher abgeschlossen werden. "
-                    "Es wurde keine erfolgreiche Buchung bestätigt.",
+                    "Bitte prüfe den Ledger-Status, bevor du den Vorgang erneut startest.",
                 )
 
         context = {
@@ -226,10 +266,30 @@ class WalletHoldAdmin(admin.ModelAdmin):
 
 @admin.register(WalletTransaction)
 class WalletTransactionAdmin(admin.ModelAdmin):
-    list_display = ("wallet", "sequence_number", "type", "amount_cents", "created_at")
-    list_filter = ("type",)
-    search_fields = ("entry_hash", "idempotency_key", "reference")
+    list_display = (
+        "wallet",
+        "sequence_number",
+        "type",
+        "formatted_amount",
+        "description",
+        "created_at",
+    )
+    list_filter = ("type", "created_at")
+    search_fields = (
+        "entry_hash",
+        "idempotency_key",
+        "reference",
+        "description",
+        "wallet__customer__user__username",
+        "wallet__customer__user__email",
+    )
+    list_select_related = ("wallet__customer__user", "signing_key")
     readonly_fields = tuple(field.name for field in WalletTransaction._meta.fields)
+    date_hierarchy = "created_at"
+
+    @admin.display(description="Betrag", ordering="amount_cents")
+    def formatted_amount(self, obj):
+        return eur(obj.amount_cents)
 
     def has_view_permission(self, request, obj=None):
         return request.user.is_active and request.user.is_staff
