@@ -2,7 +2,7 @@
 
 A Django-based customer and billing platform for managing hosting services backed by Pelican Panel.
 
-PHM is under active development. The repository contains Django authentication, private-customer account provisioning, a signed wallet ledger, administrator ledger tools and the first customer-facing account pages. Hosting catalog, orders, subscriptions, invoices and Pelican provisioning are not yet integrated into a complete end-to-end product.
+PHM is under active development. The repository now contains verified private-customer authentication, an administrator-managed hosting catalog, wallet-funded customer checkout, signed wallet accounting and opt-in recurring subscriptions. Invoices and Pelican provisioning remain incomplete.
 
 ## Product scope
 
@@ -44,23 +44,27 @@ There are no business-account or customer-membership models. The account page re
 
 ### `apps.catalog`
 
-Contains administrator-managed hosting products and plans. Prices and setup fees are stored as integer EUR cents. Billing intervals are configurable (one-time, day, week, month or year), and resource limits are stored as structured JSON without assuming a specific hosting platform. Products and plans are not yet exposed through a customer-facing storefront.
+Contains administrator-managed hosting products and plans. Prices and setup fees are stored as integer EUR cents. Billing intervals are configurable (one-time, day, week, month or year), and resource limits are stored as structured JSON without assuming a specific hosting platform. Active offers are exposed through the authenticated customer catalog.
 
 ### `apps.orders`
 
-Contains wallet-funded order creation and the first customer checkout flow. Placing a paid order reserves wallet funds through a hold; confirming payment captures the hold and writes a signed purchase transaction. Cancelling an unpaid order releases the reservation. Free plans can be ordered without creating a zero-value ledger entry. Order items preserve immutable product, plan, price, billing interval and resource snapshots. Customers can browse active catalog entries, purchase with their wallet and view only their own orders. Automated server provisioning is still pending.
+Contains wallet-funded order creation and the customer checkout flow. Placing a paid order reserves wallet funds through a hold; confirming payment captures the hold and writes a signed purchase transaction. Cancelling an unpaid order releases the reservation. Free plans can be ordered without creating a zero-value ledger entry. Order items preserve immutable product, plan, price, billing interval and resource snapshots. Customers can browse active catalog entries, purchase with their wallet and view only their own orders. Automated server provisioning is still pending.
 
 ### `apps.wallet`
 
 Owns the single EUR wallet for each personal customer. The repository includes wallet, hold, signing-key, transaction and checkpoint models, idempotent transaction services, administrator-only manual adjustments, a read-only searchable ledger admin and signed checkpoint support. `verify_ledger` checks every wallet hash/signature chain and the latest checkpoint against the live ledger. `checkpoint_ledger` verifies the current state before appending a new signed checkpoint. Private signing keys are loaded from environment configuration and are not stored in the PHM database. SQLite and PostgreSQL triggers now reject direct UPDATE/DELETE operations on transactions and checkpoints. Externally retained checkpoints, production secret management and production deployment hardening are still outstanding.
 
+### `apps.subscriptions`
+
+Recurring orders create a subscription snapshot after successful wallet payment. Billing intervals use calendar-aware day, week, month and year arithmetic. Automatic renewal is **disabled by default** and requires explicit customer opt-in. Renewals debit only the customer's PHM wallet; insufficient funds move the subscription to `past_due` without creating a debit. Customers can disable renewal or schedule cancellation at the end of the paid period. `process_subscription_renewals` processes due contracts. Automatic service suspension and notifications are not enabled yet.
+
 ### Planned domain applications
 
 The following areas remain planned and are not yet complete:
-- `subscriptions`: recurring hosting contracts and renewals;
-- `invoices`: invoice creation and records;
+- `invoices`: immutable invoice documents, legally compliant numbering and tax handling;
 - `pelican`: synchronization and provisioning through the Pelican Panel API;
-- `audit`: security-sensitive and administrative audit events.
+- `audit`: security-sensitive and administrative audit events;
+- `notifications`: customer email and in-app notifications.
 
 ## Wallet and accounting rules
 
@@ -92,7 +96,10 @@ PHM/
 │   ├── apps/
 │   │   ├── auth/
 │   │   ├── customers/
-│   │   └── wallet/
+│   │   ├── catalog/
+│   │   ├── wallet/
+│   │   ├── orders/
+│   │   └── subscriptions/
 │   └── manage.py
 └── README.md
 ```
