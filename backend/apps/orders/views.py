@@ -84,7 +84,7 @@ def purchase_plan_view(request, plan_id):
 
     try:
         order = purchase_plan(
-            request.user.customer_id,
+            request.user.customer.pk,
             plan_id,
             idempotency_key=idempotency_key,
             signing_key_id=signing_key.pk if signing_key else None,
