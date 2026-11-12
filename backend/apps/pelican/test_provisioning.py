@@ -97,6 +97,7 @@ class PelicanServerProvisioningTests(TestCase):
         external_id = self.record.external_id
         client = FakeProvisioningClient(created={
             "id": 88,
+            "user": 55,
             "external_id": external_id,
             "uuid": "remote-uuid",
             "identifier": "abc123",
@@ -115,7 +116,7 @@ class PelicanServerProvisioningTests(TestCase):
     def test_retry_reconciles_existing_external_id_without_creating_duplicate(self):
         external_id = self.record.external_id
         existing = {
-            "id": 88, "external_id": external_id, "uuid": "remote-uuid",
+            "id": 88, "user": 55, "external_id": external_id, "uuid": "remote-uuid",
             "identifier": "abc123", "name": "Minecraft Standard",
         }
         client = FakeProvisioningClient(
