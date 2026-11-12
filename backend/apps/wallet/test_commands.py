@@ -54,3 +54,53 @@ class VerifyLedgerCommandTests(TestCase):
         output = StringIO()
         call_command("verify_ledger", "--allow-unanchored", stdout=output)
         self.assertIn("without a signed checkpoint", output.getvalue())
+
+    def test_checkpoint_command_creates_checkpoint_after_verification(self):
+        import base64
+
+        from django.test import override_settings
+
+        raw_private_key = self.private_key.private_bytes(
+            encoding=serialization.Encoding.Raw,
+            format=serialization.PrivateFormat.Raw,
+            encryption_algorithm=serialization.NoEncryption(),
+        )
+        with override_settings(
+            WALLET_LEDGER_KEY_ID=self.key.key_id,
+            WALLET_LEDGER_SIGNER="apps.wallet.signing.sign_payload",
+            WALLET_LEDGER_PRIVATE_KEY_B64=base64.b64encode(raw_private_key).decode("ascii"),
+        ):
+            call_command("checkpoint_ledger")
+
+        self.assertEqual(self.key.checkpoints.count(), 1)
+
+    def test_checkpoint_command_refuses_to_anchor_changed_wallet_balance(self):
+        import base64
+
+        from django.db import connection
+        from django.test import override_settings
+
+        raw_private_key = self.private_key.private_bytes(
+            encoding=serialization.Encoding.Raw,
+            format=serialization.PrivateFormat.Raw,
+            encryption_algorithm=serialization.NoEncryption(),
+        )
+        create_ledger_checkpoint(
+            signing_key_id=self.key.pk,
+            signer=self.private_key.sign,
+        )
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "UPDATE wallets SET balance_cents = 1 WHERE id = %s",
+                [str(self.user.customer.wallet.pk)],
+            )
+
+        with override_settings(
+            WALLET_LEDGER_KEY_ID=self.key.key_id,
+            WALLET_LEDGER_SIGNER="apps.wallet.signing.sign_payload",
+            WALLET_LEDGER_PRIVATE_KEY_B64=base64.b64encode(raw_private_key).decode("ascii"),
+        ):
+            with self.assertRaisesRegex(CommandError, "does not match the current ledger"):
+                call_command("checkpoint_ledger")
+
+        self.assertEqual(self.key.checkpoints.count(), 1)
