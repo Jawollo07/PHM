@@ -133,7 +133,11 @@ def _post_locked(
         signing_key=signing_key,
         created_at=created_at,
     )
-    Wallet.objects.filter(pk=wallet.pk).update(balance_cents=new_balance, updated_at=created_at)
+    updated = Wallet.objects.filter(pk=wallet.pk).apply_ledger_balance(
+        new_balance, created_at
+    )
+    if updated != 1:
+        raise Wallet.DoesNotExist("Wallet disappeared while posting a ledger transaction.")
     wallet.balance_cents = new_balance
     wallet.updated_at = created_at
     return entry
