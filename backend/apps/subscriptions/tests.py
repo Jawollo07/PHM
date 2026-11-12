@@ -153,6 +153,7 @@ class SubscriptionServiceTests(TestCase):
             signing_key_id=self.key.pk,
             signer=self.signer,
         )
+        self.wallet.refresh_from_db()
         balance_before = self.wallet.balance_cents
         result = renew_subscription(
             subscription.pk,
