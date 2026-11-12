@@ -66,6 +66,7 @@ class PelicanServer(models.Model):
     last_error_code = models.CharField(max_length=64, blank=True, default="")
     attempts = models.PositiveIntegerField(default=0)
     last_attempt_at = models.DateTimeField(null=True, blank=True)
+    next_retry_at = models.DateTimeField(null=True, blank=True)
     provisioned_at = models.DateTimeField(null=True, blank=True)
     installed_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
