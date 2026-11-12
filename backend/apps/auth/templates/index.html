@@ -8,9 +8,7 @@
 <body>
     <main>
         <h1>Anmelden</h1>
-        {% if error %}
-            <p role="alert">{{ error }}</p>
-        {% endif %}
+        {% if error %}<p role="alert">{{ error }}</p>{% endif %}
         <form action="{% url 'login' %}" method="post">
             {% csrf_token %}
             <label for="username">Benutzername</label>
@@ -19,6 +17,7 @@
             <input id="password" type="password" name="password" autocomplete="current-password" required>
             <button type="submit">Anmelden</button>
         </form>
+        <p><a href="{% url 'register' %}">Privates Konto erstellen</a></p>
     </main>
 </body>
 </html>
