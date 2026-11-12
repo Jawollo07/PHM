@@ -43,6 +43,8 @@ class Migration(migrations.Migration):
                     max_length=10,
                 )),
                 ("billing_interval_count", models.PositiveSmallIntegerField(default=1)),
+                ("billing_anchor_day", models.PositiveSmallIntegerField(default=1)),
+                ("billing_anchor_month", models.PositiveSmallIntegerField(default=1)),
                 ("current_period_start", models.DateTimeField()),
                 ("current_period_end", models.DateTimeField()),
                 ("next_billing_at", models.DateTimeField()),
@@ -96,6 +98,20 @@ class Migration(migrations.Migration):
             constraint=models.CheckConstraint(
                 condition=Q(billing_interval_count__gte=1),
                 name="subscription_interval_positive",
+            ),
+        ),
+        migrations.AddConstraint(
+            model_name="subscription",
+            constraint=models.CheckConstraint(
+                condition=Q(billing_anchor_day__gte=1, billing_anchor_day__lte=31),
+                name="subscription_anchor_day_valid",
+            ),
+        ),
+        migrations.AddConstraint(
+            model_name="subscription",
+            constraint=models.CheckConstraint(
+                condition=Q(billing_anchor_month__gte=1, billing_anchor_month__lte=12),
+                name="subscription_anchor_month_valid",
             ),
         ),
         migrations.AddConstraint(
