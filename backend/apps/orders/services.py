@@ -145,3 +145,31 @@ def cancel_pending_order(order_id) -> Order:
     order.status = Order.Status.CANCELLED
     order.save(update_fields=["status", "updated_at"])
     return order
+
+
+@transaction.atomic
+def purchase_plan(
+    customer_id,
+    plan_id,
+    *,
+    idempotency_key: str,
+    signing_key_id,
+    signer,
+    quantity: int = 1,
+) -> Order:
+    """Place and immediately settle an order from the customer's wallet."""
+    order = place_order(
+        customer_id,
+        plan_id,
+        idempotency_key=idempotency_key,
+        quantity=quantity,
+    )
+    if order.status == Order.Status.PAID:
+        return order
+    if signing_key_id is None or signer is None:
+        raise OrderNotPayable("Wallet signing is not configured; the order was not charged.")
+    return confirm_order_payment(
+        order.pk,
+        signing_key_id=signing_key_id,
+        signer=signer,
+    )
