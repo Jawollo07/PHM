@@ -2,7 +2,7 @@
 {% load admin_urls %}
 {% block object-tools-items %}
   {% if can_adjust_wallet %}
-    <li><a href="{% url 'admin:wallet_manual_adjustment' %}">Manuelle Guthabenbuchung</a></li>
+    <li><a href="{% url 'admin:wallet_wallet_manual_adjustment' %}">Manuelle Guthabenbuchung</a></li>
   {% endif %}
   {{ block.super }}
 {% endblock %}
