@@ -40,6 +40,17 @@ class AccountViewTests(TestCase):
         self.assertContains(response, 'test@example.com')
         self.assertContains(response, 'Kontaktdaten')
 
+    def test_account_page_displays_wallet_balances_without_payment_actions(self):
+        response = self.client.get('/account/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Mein Guthaben')
+        self.assertContains(response, 'Kontostand')
+        self.assertContains(response, 'Verfügbar')
+        self.assertContains(response, '0,00 EUR')
+        self.assertContains(response, 'Online-Zahlungsmethoden sind nicht aktiviert')
+        self.assertNotContains(response, 'Jetzt bezahlen')
+
     def test_account_page_displays_customer_phone_number(self):
         customer = Customer.objects.get(user=self.user)
         customer.phone_number = '0123456789'
