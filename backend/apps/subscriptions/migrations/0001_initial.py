@@ -33,7 +33,15 @@ class Migration(migrations.Migration):
                 )),
                 ("currency", models.CharField(default="EUR", editable=False, max_length=3)),
                 ("price_cents", models.BigIntegerField(validators=[django.core.validators.MinValueValidator(0)])),
-                ("billing_interval_unit", models.CharField(max_length=10)),
+                ("billing_interval_unit", models.CharField(
+                    choices=[
+                        ("day", "Tag(e)"),
+                        ("week", "Woche(n)"),
+                        ("month", "Monat(e)"),
+                        ("year", "Jahr(e)"),
+                    ],
+                    max_length=10,
+                )),
                 ("billing_interval_count", models.PositiveSmallIntegerField(default=1)),
                 ("current_period_start", models.DateTimeField()),
                 ("current_period_end", models.DateTimeField()),
