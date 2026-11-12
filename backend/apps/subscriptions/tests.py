@@ -1,5 +1,5 @@
 import calendar
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal
 
 from django.contrib.auth import get_user_model
@@ -136,18 +136,33 @@ class SubscriptionServiceTests(TestCase):
                 subscription.pk,
                 signing_key_id=self.key.pk,
                 signer=self.signer,
-                now=subscription.next_billing_at - timezone.timedelta(days=1),
+                now=subscription.next_billing_at - timedelta(days=1),
             )
 
     def test_insufficient_balance_marks_subscription_past_due_without_debit(self):
+        from apps.wallet.services import debit_wallet
+
         subscription = self.create_paid_subscription()
         set_auto_renew(subscription.pk, self.user.customer.pk, True)
-        # Spend the remaining available wallet funds before the renewal is due.
         self.wallet.refresh_from_db()
-        with self.assertRaises(Exception):
-            renew_subscription(
-                subscription.pk,
-                signing_key_id=self.key.pk,
-                signer=self.signer,
-                now=subscription.next_billing_at,
-            )
+        debit_wallet(
+            self.wallet.pk,
+            self.wallet.balance_cents,
+            description="Spend remaining test balance",
+            idempotency_key="subscription-spend-remaining",
+            signing_key_id=self.key.pk,
+            signer=self.signer,
+        )
+        balance_before = self.wallet.balance_cents
+        result = renew_subscription(
+            subscription.pk,
+            signing_key_id=self.key.pk,
+            signer=self.signer,
+            now=subscription.next_billing_at,
+        )
+        subscription.refresh_from_db()
+        self.wallet.refresh_from_db()
+        self.assertIsNone(result)
+        self.assertEqual(subscription.status, Subscription.Status.PAST_DUE)
+        self.assertEqual(self.wallet.balance_cents, balance_before)
+        self.assertIsNotNone(subscription.past_due_since)
