@@ -274,32 +274,204 @@ class WalletHoldAdmin(admin.ModelAdmin):
         return False
 
 
+class TransactionDirectionFilter(admin.SimpleListFilter):
+    title = "Buchungsrichtung"
+    parameter_name = "direction"
+
+    def lookups(self, request, model_admin):
+        return (("credit", "Gutschriften"), ("debit", "Belastungen"))
+
+    def queryset(self, request, queryset):
+        if self.value() == "credit":
+            return queryset.filter(amount_cents__gt=0)
+        if self.value() == "debit":
+            return queryset.filter(amount_cents__lt=0)
+        return queryset
+
+
+class AdminActorFilter(admin.SimpleListFilter):
+    title = "Administrator"
+    parameter_name = "admin_actor"
+
+    def lookups(self, request, model_admin):
+        from django.contrib.auth import get_user_model
+
+        actor_ids = (
+            WalletTransaction.objects.filter(
+                type=WalletTransaction.Type.ADMIN_ADJUSTMENT
+            )
+            .exclude(metadata__admin_user_id__isnull=True)
+            .values_list("metadata__admin_user_id", flat=True)
+            .distinct()
+        )
+        User = get_user_model()
+        actors = User.objects.filter(pk__in=actor_ids).order_by("username")
+        return tuple(
+            (str(actor.pk), f"{actor.get_username()} ({actor.email})")
+            for actor in actors
+        )
+
+    def queryset(self, request, queryset):
+        if self.value():
+            return queryset.filter(metadata__admin_user_id=self.value())
+        return queryset
+
+
 @admin.register(WalletTransaction)
 class WalletTransactionAdmin(admin.ModelAdmin):
     list_display = (
-        "wallet",
-        "sequence_number",
-        "type",
-        "formatted_amount",
-        "description",
+        "transaction_link",
         "created_at",
+        "customer_account",
+        "type",
+        "direction_label",
+        "formatted_amount",
+        "balance_after",
+        "description",
+        "admin_actor",
     )
-    list_filter = ("type", "created_at")
+    list_display_links = ("transaction_link",)
+    list_filter = (
+        TransactionDirectionFilter,
+        "type",
+        "created_at",
+        "signing_key",
+        AdminActorFilter,
+    )
     search_fields = (
+        "id",
         "entry_hash",
+        "previous_hash",
         "idempotency_key",
         "reference",
         "description",
+        "wallet__id",
         "wallet__customer__user__username",
         "wallet__customer__user__email",
+        "metadata",
     )
     list_select_related = ("wallet__customer__user", "signing_key")
-    readonly_fields = tuple(field.name for field in WalletTransaction._meta.fields)
+    readonly_fields = (
+        "id",
+        "wallet",
+        "sequence_number",
+        "type",
+        "amount_cents",
+        "balance_after_cents",
+        "description",
+        "idempotency_key",
+        "reference",
+        "metadata",
+        "previous_hash",
+        "entry_hash",
+        "payload_version",
+        "signature_hex",
+        "signing_key",
+        "created_at",
+        "direction_label",
+        "formatted_amount_detail",
+        "admin_actor",
+        "admin_user_id",
+    )
+    fieldsets = (
+        ("Buchung", {
+            "fields": (
+                "id",
+                "wallet",
+                "sequence_number",
+                "created_at",
+                "type",
+                "direction_label",
+                "amount_cents",
+                "formatted_amount_detail",
+                "balance_after_cents",
+                "description",
+                "reference",
+            ),
+        }),
+        ("Administrator", {
+            "fields": ("admin_actor", "admin_user_id"),
+        }),
+        ("Idempotenz", {
+            "fields": ("idempotency_key",),
+        }),
+        ("Kryptografische Integrität", {
+            "fields": (
+                "previous_hash",
+                "entry_hash",
+                "payload_version",
+                "signing_key",
+                "signature_hex",
+            ),
+        }),
+        ("Metadaten", {
+            "fields": ("metadata",),
+            "classes": ("collapse",),
+        }),
+    )
     date_hierarchy = "created_at"
+    ordering = ("-created_at", "-sequence_number")
+    list_per_page = 50
+    show_full_result_count = False
+    empty_value_display = "—"
+
+    def get_queryset(self, request):
+        return super().get_queryset(request).select_related(
+            "wallet__customer__user",
+            "signing_key",
+        )
+
+    @admin.display(description="Buchung", ordering="sequence_number")
+    def transaction_link(self, obj):
+        url = reverse("admin:wallet_wallettransaction_change", args=(obj.pk,))
+        return format_html('<a href="{}">#{}</a>', url, obj.sequence_number)
+
+    @admin.display(description="Kunde", ordering="wallet__customer__user__username")
+    def customer_account(self, obj):
+        user = obj.wallet.customer.user
+        return f"{user.get_username()} ({user.email})"
+
+    @admin.display(description="Richtung", ordering="amount_cents")
+    def direction_label(self, obj):
+        return "Gutschrift" if obj.amount_cents > 0 else "Belastung"
 
     @admin.display(description="Betrag", ordering="amount_cents")
     def formatted_amount(self, obj):
         return eur(obj.amount_cents)
+
+    @admin.display(description="Betrag (formatiert)")
+    def formatted_amount_detail(self, obj):
+        return eur(obj.amount_cents)
+
+    @admin.display(description="Kontostand danach", ordering="balance_after_cents")
+    def balance_after(self, obj):
+        return eur(obj.balance_after_cents)
+
+    @admin.display(description="Administrator", empty_value="—")
+    def admin_actor(self, obj):
+        actor_id = obj.metadata.get("admin_user_id")
+        if not actor_id:
+            return "—"
+        stored_name = obj.metadata.get("admin_username", "Unbekannt")
+        from django.contrib.auth import get_user_model
+
+        actor = get_user_model().objects.filter(pk=actor_id).only(
+            "username", "email"
+        ).first()
+        if actor:
+            return f"{actor.get_username()} ({actor.email})"
+        return f"{stored_name} (Benutzerkonto nicht mehr vorhanden)"
+
+    @admin.display(description="Administrator-ID")
+    def admin_user_id(self, obj):
+        return obj.metadata.get("admin_user_id") or "—"
+
+    @admin.display(description="Signatur (Hex)")
+    def signature_hex(self, obj):
+        signature = obj.signature
+        if hasattr(signature, "tobytes"):
+            signature = signature.tobytes()
+        return bytes(signature).hex()
 
     def has_view_permission(self, request, obj=None):
         return request.user.is_active and request.user.is_staff
