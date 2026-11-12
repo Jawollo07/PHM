@@ -190,10 +190,12 @@ class AccountViewTests(TestCase):
         import re
 
         from django.core import mail
+        from django.test import override_settings
         from apps.auth.models import EmailVerification
 
-        response = self.client.post(
-            "/account/",
+        with override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend"):
+            response = self.client.post(
+                "/account/",
             {
                 "username": "testuser",
                 "email": "changed-address@example.com",
