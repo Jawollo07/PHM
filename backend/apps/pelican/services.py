@@ -172,7 +172,6 @@ def _apply_remote_state(record, remote):
 
 def sync_pelican_server(server_record_id, *, client=None):
     """Create or reconcile one Pelican server using a stable external_id."""
-    client = client or PelicanClient()
     with transaction.atomic():
         record = (PelicanServer.objects.select_for_update()
                   .select_related("order_item__order__customer__user")
@@ -188,6 +187,7 @@ def sync_pelican_server(server_record_id, *, client=None):
         record.status = PelicanServer.Status.PROVISIONING
         record.save(update_fields=["status", "updated_at"])
         try:
+            client = client or PelicanClient()
             remote = client.find_server_by_external_id(record.external_id)
             if remote is None:
                 payload = _server_payload(record)
