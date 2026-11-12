@@ -39,6 +39,7 @@ def place_order(
     """Create an order, snapshot its plan, and reserve wallet funds atomically."""
     if type(quantity) is not int or quantity < 1:
         raise OrderError("Order quantity must be a positive integer.")
+    idempotency_key = idempotency_key.strip() if isinstance(idempotency_key, str) else ""
     if not idempotency_key or len(idempotency_key) > 128:
         raise OrderError("A valid order idempotency key is required.")
 
@@ -52,7 +53,7 @@ def place_order(
     ).first()
     if existing:
         item = existing.items.first()
-        if item is None or item.plan_id != plan_id or item.quantity != quantity:
+        if item is None or str(item.plan_id) != str(plan_id) or item.quantity != quantity:
             raise IdempotencyConflict("The order idempotency key was already used for another request.")
         return existing
 
