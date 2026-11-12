@@ -125,6 +125,17 @@ class Migration(migrations.Migration):
                 name="order_paid_requires_timestamp",
             ),
         ),
+        migrations.AddConstraint(
+            model_name="order",
+            constraint=models.CheckConstraint(
+                condition=(
+                    Q(status="paid", total_cents=0, paid_transaction__isnull=True)
+                    | Q(status="paid", total_cents__gt=0, paid_transaction__isnull=False)
+                    | ~Q(status="paid")
+                ),
+                name="order_paid_payment_consistent",
+            ),
+        ),
         migrations.AddIndex(
             model_name="order",
             index=models.Index(fields=["customer", "status", "created_at"], name="order_customer_status_idx"),
