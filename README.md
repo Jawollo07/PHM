@@ -42,6 +42,10 @@ Owns the personal customer account associated one-to-one with a Django user. It 
 
 There are no business-account or customer-membership models. The account page reads and updates customer information. New users are provisioned with a customer, user profile, notification settings and wallet in one database transaction.
 
+### `apps.catalog`
+
+Contains administrator-managed hosting products and plans. Prices and setup fees are stored as integer EUR cents. Billing intervals are configurable (one-time, day, week, month or year), and resource limits are stored as structured JSON without assuming a specific hosting platform. Products and plans are not yet exposed through a customer-facing storefront.
+
 ### `apps.wallet`
 
 Owns the single EUR wallet for each personal customer. The repository includes wallet, hold, signing-key, transaction and checkpoint models, idempotent transaction services, administrator-only manual adjustments, a read-only searchable ledger admin and signed checkpoint support. `verify_ledger` checks every wallet hash/signature chain and the latest checkpoint against the live ledger. `checkpoint_ledger` verifies the current state before appending a new signed checkpoint. Private signing keys are loaded from environment configuration and are not stored in the PHM database. SQLite and PostgreSQL triggers now reject direct UPDATE/DELETE operations on transactions and checkpoints. Externally retained checkpoints, production secret management and production deployment hardening are still outstanding.
@@ -49,7 +53,6 @@ Owns the single EUR wallet for each personal customer. The repository includes w
 ### Planned domain applications
 
 The following areas remain planned and are not yet complete:
-- `catalog`: hosting products, plans and prices;
 - `orders`: customer purchases;
 - `subscriptions`: recurring hosting contracts and renewals;
 - `invoices`: invoice creation and records;
