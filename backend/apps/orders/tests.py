@@ -283,3 +283,174 @@ class OrderAdminTests(TestCase):
                     "DELETE FROM orders WHERE id = %s",
                     [str(order.pk)],
                 )
+
+
+class CustomerOrderViewsTests(TestCase):
+    def setUp(self):
+        import hashlib
+
+        from cryptography.hazmat.primitives import serialization
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+        self.private_key = Ed25519PrivateKey.generate()
+        public_key = self.private_key.public_key().public_bytes(
+            encoding=serialization.Encoding.Raw,
+            format=serialization.PublicFormat.Raw,
+        )
+        self.user = get_user_model().objects.create_user(
+            username="portal-customer",
+            email="portal-customer@example.com",
+            password="secure-test-password",
+        )
+        self.wallet = self.user.customer.wallet
+        self.product = HostingProduct.objects.create(
+            name="Portal Game Hosting",
+            slug="portal-game-hosting",
+            is_active=True,
+        )
+        self.plan = HostingPlan.objects.create(
+            product=self.product,
+            name="Portal Starter",
+            slug="portal-starter",
+            price_cents=1500,
+            billing_interval_unit=HostingPlan.IntervalUnit.MONTH,
+            is_active=True,
+        )
+        self.key = LedgerSigningKey.objects.create(
+            key_id="portal-test-key",
+            label="Portal test key",
+            public_key=public_key,
+            fingerprint=hashlib.sha256(public_key).hexdigest(),
+            status=LedgerSigningKey.Status.ACTIVE,
+        )
+        self.client.force_login(self.user)
+
+    def signed_settings(self):
+        import base64
+
+        from django.test import override_settings
+        from cryptography.hazmat.primitives import serialization
+
+        raw = self.private_key.private_bytes(
+            encoding=serialization.Encoding.Raw,
+            format=serialization.PrivateFormat.Raw,
+            encryption_algorithm=serialization.NoEncryption(),
+        )
+        return override_settings(
+            WALLET_LEDGER_KEY_ID=self.key.key_id,
+            WALLET_LEDGER_SIGNER="apps.wallet.signing.sign_payload",
+            WALLET_LEDGER_PRIVATE_KEY_B64=base64.b64encode(raw).decode("ascii"),
+        )
+
+    def fund_wallet(self, amount=5000):
+        from apps.wallet.services import credit_wallet
+
+        credit_wallet(
+            self.wallet.pk,
+            amount,
+            description="Portal test funding",
+            idempotency_key=f"portal-funding-{amount}",
+            signing_key_id=self.key.pk,
+            signer=self.private_key.sign,
+        )
+
+    def test_catalog_shows_only_active_products_and_plans(self):
+        inactive_product = HostingProduct.objects.create(
+            name="Hidden",
+            slug="hidden",
+            is_active=False,
+        )
+        HostingPlan.objects.create(
+            product=inactive_product,
+            name="Hidden plan",
+            slug="hidden-plan",
+            price_cents=100,
+            is_active=True,
+        )
+        inactive_plan = HostingPlan.objects.create(
+            product=self.product,
+            name="Hidden plan",
+            slug="hidden-plan",
+            price_cents=100,
+            is_active=False,
+        )
+
+        response = self.client.get(reverse("catalog"))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Portal Starter")
+        self.assertNotContains(response, "Hidden plan")
+
+    def test_customer_can_purchase_a_plan_using_wallet_balance(self):
+        from django.test import override_settings
+        from django.urls import reverse
+
+        self.fund_wallet()
+        key = "d5db8d5e-4ad4-4f50-8d8d-07f03fd45b42"
+        with self.signed_settings():
+            response = self.client.post(
+                reverse("purchase_plan", args=[self.plan.pk]),
+                {"idempotency_key": key},
+                follow=True,
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertRedirects(response, reverse("orders"))
+        order = Order.objects.get(customer=self.user.customer)
+        self.wallet.refresh_from_db()
+        self.assertEqual(order.status, Order.Status.PAID)
+        self.assertEqual(order.total_cents, 1500)
+        self.assertEqual(self.wallet.balance_cents, 3500)
+        self.assertEqual(self.wallet.transactions.filter(type="purchase").count(), 1)
+
+    def test_repeated_purchase_request_does_not_charge_twice(self):
+        from django.urls import reverse
+
+        self.fund_wallet()
+        key = "c4bfc01e-07a4-4c28-97e0-99f6b3d2a8ad"
+        with self.signed_settings():
+            first = self.client.post(
+                reverse("purchase_plan", args=[self.plan.pk]),
+                {"idempotency_key": key},
+            )
+            second = self.client.post(
+                reverse("purchase_plan", args=[self.plan.pk]),
+                {"idempotency_key": key},
+            )
+
+        self.assertEqual(first.status_code, 302)
+        self.assertEqual(second.status_code, 302)
+        self.wallet.refresh_from_db()
+        self.assertEqual(self.wallet.balance_cents, 3500)
+        self.assertEqual(Order.objects.filter(customer=self.user.customer).count(), 1)
+        self.assertEqual(self.wallet.transactions.filter(type="purchase").count(), 1)
+
+    def test_insufficient_wallet_balance_does_not_create_order_or_hold(self):
+        from django.urls import reverse
+
+        response = self.client.post(
+            reverse("purchase_plan", args=[self.plan.pk]),
+            {"idempotency_key": "1d5a1f86-8c35-49aa-9d40-6065f43a43d2"},
+            follow=True,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Guthaben reicht")
+        self.assertFalse(Order.objects.filter(customer=self.user.customer).exists())
+        self.assertFalse(self.wallet.holds.exists())
+
+    def test_customer_cannot_view_another_customers_order(self):
+        from django.urls import reverse
+
+        other_user = get_user_model().objects.create_user(
+            username="other-portal-customer",
+            email="other-portal@example.com",
+            password="secure-test-password",
+        )
+        other_order = place_order(
+            other_user.customer.pk,
+            self.plan.pk,
+            idempotency_key="other-customer-order-001",
+        )
+        response = self.client.get(
+            reverse("order_detail", args=[other_order.pk])
+        )
+        self.assertEqual(response.status_code, 404)
