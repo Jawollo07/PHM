@@ -4,7 +4,8 @@ from django.utils import timezone
 
 from apps.auth.models import UserProfile
 from apps.customers.models import Customer, CustomerAddress, CustomerSettings
-from apps.wallet.models import Wallet
+from apps.wallet.models import LedgerSigningKey, Wallet
+from apps.wallet.services import adjust_wallet_balance
 
 
 class AccountViewTests(TestCase):
@@ -50,6 +51,43 @@ class AccountViewTests(TestCase):
         self.assertContains(response, '0,00 EUR')
         self.assertContains(response, 'Online-Zahlungsmethoden sind nicht aktiviert')
         self.assertNotContains(response, 'Jetzt bezahlen')
+
+    def test_account_page_displays_only_the_signed_in_users_wallet_ledger(self):
+        key = LedgerSigningKey.objects.create(
+            key_id="account-view-key",
+            label="Account view test key",
+            public_key=b"account-view-public-key",
+            fingerprint="f" * 64,
+        )
+        adjust_wallet_balance(
+            self.user.customer.wallet.pk,
+            1234,
+            description="Manuelle Testgutschrift",
+            idempotency_key="account-view-credit-1",
+            signing_key_id=key.pk,
+            signer=lambda payload: b"account-view-signature",
+        )
+        other_user = get_user_model().objects.create_user(
+            username="other-account",
+            email="other-account@example.com",
+            password="secure-test-password",
+        )
+        adjust_wallet_balance(
+            other_user.customer.wallet.pk,
+            9900,
+            description="Fremde Buchung",
+            idempotency_key="other-account-credit-1",
+            signing_key_id=key.pk,
+            signer=lambda payload: b"account-view-signature",
+        )
+
+        response = self.client.get('/account/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Manuelle Testgutschrift")
+        self.assertContains(response, "12,34 EUR")
+        self.assertNotContains(response, "Fremde Buchung")
+        self.assertNotContains(response, "99,00 EUR")
 
     def test_account_page_displays_customer_phone_number(self):
         customer = Customer.objects.get(user=self.user)
