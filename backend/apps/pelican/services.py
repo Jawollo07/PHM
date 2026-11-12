@@ -122,6 +122,9 @@ def _server_payload(record):
            for key, value in environment.items()):
         raise PelicanAPIError("invalid_environment")
 
+    for flag in ("skip_scripts", "oom_disabled", "start_on_completion"):
+        if flag in config and type(config[flag]) is not bool:
+            raise PelicanAPIError("invalid_egg_configuration")
     docker_image = config.get("docker_image")
     startup = config.get("startup")
     if not isinstance(docker_image, str) or not docker_image.strip() or not isinstance(startup, str) or not startup.strip():
@@ -136,9 +139,15 @@ def _server_payload(record):
         "docker_image": docker_image,
         "startup": startup,
         "environment": environment,
-        "limits": {key: limits[key] for key in required_limits},
+        "limits": {
+            **{key: limits[key] for key in required_limits},
+            **({"threads": limits["threads"]} if isinstance(limits.get("threads"), str) else {}),
+        },
         "feature_limits": {key: feature_limits[key] for key in required_features},
         "allocation": {"default": config["allocation_id"]},
+        "skip_scripts": config.get("skip_scripts", False),
+        "oom_disabled": config.get("oom_disabled", False),
+        "start_on_completion": config.get("start_on_completion", True),
     }
 
 
@@ -146,7 +155,7 @@ def _apply_remote_state(record, remote):
     remote_id, external_id = _panel_attributes(remote)
     if external_id != record.external_id:
         raise PelicanAPIError("server_identity_mismatch")
-    installed_at = remote.get("installed_at")
+    installed_at = remote.get("installed_at") or (remote.get("container") or {}).get("installed")
     record.panel_server_id = remote_id
     record.panel_uuid = str(remote.get("uuid") or "")[:64]
     record.panel_identifier = str(remote.get("identifier") or "")[:32]
