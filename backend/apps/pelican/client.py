@@ -79,9 +79,14 @@ class PelicanClient:
     def update_user_password(self, panel_user_id, password):
         if not isinstance(password, str) or len(password) < 8:
             raise PelicanAPIError("invalid_password")
-        self._request("PATCH", f"users/{int(panel_user_id)}", {
-            "password": password,
-        })
+        current = self._request("GET", f"users/{int(panel_user_id)}")
+        attributes = current.get("attributes", {})
+        required = ("email", "username", "first_name", "last_name")
+        if not all(isinstance(attributes.get(key), str) and attributes[key] for key in required):
+            raise PelicanAPIError("invalid_user_response")
+        payload = {key: attributes[key] for key in required}
+        payload["password"] = password
+        self._request("PATCH", f"users/{int(panel_user_id)}", payload)
 
     def ensure_user(self, *, email, username, first_name):
         existing = self.find_user_by_email(email)
