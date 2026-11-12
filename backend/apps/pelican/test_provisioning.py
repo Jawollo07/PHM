@@ -155,3 +155,20 @@ class PelicanServerProvisioningTests(TestCase):
         self.assertEqual(record.status, PelicanServer.Status.FAILED)
         self.assertEqual(record.last_error_code, "pelican_config_missing")
         self.assertEqual(client.payloads, [])
+
+    def test_existing_server_owned_by_another_panel_user_is_rejected(self):
+        external_id = self.record.external_id
+        existing = {
+            "id": 88, "user": 999, "external_id": external_id,
+            "uuid": "remote-uuid", "identifier": "abc123",
+            "name": "Unexpected owner",
+        }
+        client = FakeProvisioningClient(
+            remote=existing,
+            detail=existing,
+        )
+        record = sync_pelican_server(self.record.pk, client=client)
+        self.assertEqual(record.status, PelicanServer.Status.FAILED)
+        self.assertEqual(record.last_error_code, "server_owner_mismatch")
+        self.assertIsNone(record.panel_server_id)
+        self.assertEqual(client.payloads, [])
