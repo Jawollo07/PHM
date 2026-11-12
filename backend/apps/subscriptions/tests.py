@@ -1,4 +1,7 @@
-import calendar
+def fake_signer(payload):
+    return b"test-signature"
+
+
 from datetime import datetime, timedelta
 from decimal import Decimal
 
@@ -11,11 +14,6 @@ from apps.catalog.models import HostingPlan, HostingProduct
 from apps.orders.services import place_order, confirm_order_payment
 from apps.wallet.models import LedgerSigningKey
 from apps.wallet.services import credit_wallet
-
-def fake_signer(payload):
-    return b"test-signature"
-
-
 from apps.subscriptions.models import Subscription
 from apps.subscriptions.services import (
     SubscriptionNotDue,
@@ -292,3 +290,23 @@ class SubscriptionServiceTests(TestCase):
                     "DELETE FROM subscriptions WHERE id = %s",
                     [str(subscription.pk)],
                 )
+
+    def test_scheduled_cancellation_ends_contract_at_period_end(self):
+        from django.core.management import call_command
+
+        subscription = self.create_paid_subscription()
+        cancel_subscription(
+            subscription.pk,
+            self.user.customer.pk,
+            at_period_end=True,
+        )
+        due = timezone.now() - timedelta(days=1)
+        subscription.refresh_from_db()
+        subscription.current_period_end = due
+        subscription.next_billing_at = due
+        subscription.save(update_fields=["current_period_end", "next_billing_at", "updated_at"])
+
+        call_command("process_subscription_renewals")
+        subscription.refresh_from_db()
+        self.assertEqual(subscription.status, Subscription.Status.CANCELLED)
+        self.assertIsNotNone(subscription.cancelled_at)
