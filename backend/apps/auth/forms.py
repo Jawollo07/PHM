@@ -57,3 +57,14 @@ class RegistrationForm(forms.Form):
             email=self.cleaned_data["email"],
             password=self.cleaned_data["password1"],
         )
+
+from django.contrib.auth.forms import PasswordResetForm
+
+
+class VerifiedPasswordResetForm(PasswordResetForm):
+    """Do not issue password reset links for unverified email addresses."""
+
+    def get_users(self, email):
+        for user in super().get_users(email):
+            if user.email_verified:
+                yield user
