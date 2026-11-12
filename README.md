@@ -10,7 +10,7 @@ PHM supports **private customers only**. There are no business accounts, company
 
 Each registered user is provisioned with one personal customer account and one wallet belonging to that customer. The customer account holds contact information, addresses and customer-specific preferences.
 
-Customers are intended to be able to top up their wallet through supported payment providers or manually verified payments, purchase and renew hosting services using the same wallet, and view their transactions, orders, invoices and assigned servers. Administrators may also assign privately managed servers to customers.
+Customers will be able to purchase and renew hosting services using their wallet and view their transactions, orders, invoices and assigned servers. Administrators manually credit or debit customer wallets and may assign privately managed servers to customers. Online top-ups, payment methods, payment providers and payment processing are explicitly out of scope.
 
 ## Technology and current state
 
@@ -21,7 +21,7 @@ Customers are intended to be able to top up their wallet through supported payme
 | Database | SQLite in the current development settings; PostgreSQL is intended for production |
 | Frontend | No complete frontend architecture established in the current repository |
 | Hosting integration | Pelican Panel API adapter planned |
-| Payments | Provider-based and manually verified payments planned |
+| Payments | No payment providers, payment methods or online top-ups; administrators make manual wallet adjustments only |
 | Deployment | Production configuration pending |
 
 The Django project is located in `backend/`. Its project package is `backend/core/`, and Django applications are located in `backend/apps/`.
@@ -69,7 +69,7 @@ These are mandatory domain invariants for the wallet implementation:
 6. Credits are positive and debits are negative.
 7. A debit must never make the wallet balance negative.
 8. Idempotency keys prevent duplicate processing. Reusing a key with a different request payload must be rejected.
-9. Pending top-ups are not spendable. Funds are credited only after server-side payment verification succeeds.
+9. Wallet credits are created only by authorized administrator adjustments; no customer-facing top-up or payment workflow is implemented or planned.
 10. Wallet operations must be serialized safely to prevent concurrent requests from overspending a balance.
 
 A cryptographically verifiable ledger is a design goal. Hashes and signatures must be generated and verified by dedicated ledger services. A signature alone does not replace database access controls, backups or externally retained checkpoints.
@@ -140,6 +140,6 @@ Never commit passwords, private signing keys, API tokens, production database cr
 
 ## Development status
 
-PHM is an early-stage Django application. The current repository should be treated as a development scaffold, not as a production-ready billing or hosting platform.
+PHM is an early-stage Django application. The current repository should be treated as a development scaffold, not as a production-ready billing or hosting platform. Online payments are intentionally excluded; wallet funding is administrator-managed.
 
 Verify model/migration history before applying schema changes to a database containing data. The authentication and customer migration history has been extended to provision personal customer records and wallets. Always back up an existing database before applying migrations, and verify the migration plan against a copy first.
