@@ -17,8 +17,20 @@ SQLITE_STATEMENTS = (
       OR NEW.billing_interval_unit IS NOT OLD.billing_interval_unit
       OR NEW.billing_interval_count IS NOT OLD.billing_interval_count
       OR NEW.created_at IS NOT OLD.created_at
+      OR (OLD.cancelled_at IS NOT NULL AND NEW.cancelled_at IS NOT OLD.cancelled_at)
     BEGIN
         SELECT RAISE(ABORT, 'Subscription ownership and billing terms are immutable.');
+    END""",
+    """CREATE TRIGGER subscriptions_reject_invalid_transition
+    BEFORE UPDATE ON subscriptions
+    WHEN NEW.status IS NOT OLD.status
+      AND NOT (
+          (OLD.status = 'active' AND NEW.status IN ('past_due', 'suspended', 'cancelled', 'expired'))
+          OR (OLD.status = 'past_due' AND NEW.status IN ('active', 'suspended', 'cancelled', 'expired'))
+          OR (OLD.status = 'suspended' AND NEW.status IN ('active', 'cancelled', 'expired'))
+      )
+    BEGIN
+        SELECT RAISE(ABORT, 'Invalid subscription state transition.');
     END""",
 )
 
@@ -38,7 +50,8 @@ POSTGRES_STATEMENTS = (
            OR NEW.price_cents IS DISTINCT FROM OLD.price_cents
            OR NEW.billing_interval_unit IS DISTINCT FROM OLD.billing_interval_unit
            OR NEW.billing_interval_count IS DISTINCT FROM OLD.billing_interval_count
-           OR NEW.created_at IS DISTINCT FROM OLD.created_at THEN
+           OR NEW.created_at IS DISTINCT FROM OLD.created_at
+           OR (OLD.cancelled_at IS NOT NULL AND NEW.cancelled_at IS DISTINCT FROM OLD.cancelled_at) THEN
             RAISE EXCEPTION 'Subscription ownership and billing terms are immutable.';
         END IF;
         RETURN NEW;
@@ -71,6 +84,7 @@ def remove_triggers(apps, schema_editor):
         if vendor == "sqlite":
             cursor.execute("DROP TRIGGER IF EXISTS subscriptions_reject_delete")
             cursor.execute("DROP TRIGGER IF EXISTS subscriptions_reject_terms_update")
+            cursor.execute("DROP TRIGGER IF EXISTS subscriptions_reject_invalid_transition")
         elif vendor == "postgresql":
             cursor.execute(
                 "DROP TRIGGER IF EXISTS subscriptions_guard_history ON subscriptions"
