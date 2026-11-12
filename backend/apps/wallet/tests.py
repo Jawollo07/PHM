@@ -617,3 +617,39 @@ class ManualWalletAdjustmentAdminTests(TestCase):
         self.user.user_permissions.clear()
         response = self.client.get(reverse("admin:wallet_wallet_manual_adjustment"))
         self.assertEqual(response.status_code, 403)
+
+    def test_capture_uses_its_own_reserved_funds_without_spending_other_holds(self):
+        from apps.wallet.services import capture_hold, credit_wallet, place_hold
+
+        credit_wallet(
+            self.wallet.pk,
+            10000,
+            description="Multiple hold funding",
+            idempotency_key="multiple-hold-funding",
+            signing_key_id=self.key.pk,
+            signer=self.signer,
+        )
+        first = place_hold(
+            self.wallet.pk,
+            amount_cents=8000,
+            idempotency_key="multiple-hold-first",
+        )
+        second = place_hold(
+            self.wallet.pk,
+            amount_cents=1000,
+            idempotency_key="multiple-hold-second",
+        )
+
+        entry = capture_hold(
+            first.pk,
+            signing_key_id=self.key.pk,
+            signer=self.signer,
+        )
+        self.wallet.refresh_from_db()
+        second.refresh_from_db()
+
+        self.assertEqual(entry.amount_cents, -8000)
+        self.assertEqual(self.wallet.balance_cents, 2000)
+        self.assertEqual(second.status, WalletHold.Status.ACTIVE)
+        self.assertEqual(self.wallet.reserved_balance_cents, 1000)
+        self.assertEqual(self.wallet.available_balance_cents, 1000)
