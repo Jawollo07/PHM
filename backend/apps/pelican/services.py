@@ -1,3 +1,5 @@
+from datetime import timedelta
+
 from django.db import transaction
 from django.utils import timezone
 
@@ -151,6 +153,7 @@ def _apply_remote_state(record, remote):
     record.panel_name = str(remote.get("name") or "")[:255]
     record.provisioned_at = record.provisioned_at or timezone.now()
     record.last_error_code = ""
+    record.next_retry_at = None
     if installed_at:
         record.status = PelicanServer.Status.INSTALLED
         record.installed_at = record.installed_at or timezone.now()
@@ -158,7 +161,7 @@ def _apply_remote_state(record, remote):
         record.status = PelicanServer.Status.INSTALLING
     record.save(update_fields=[
         "panel_server_id", "panel_uuid", "panel_identifier", "panel_name",
-        "provisioned_at", "installed_at", "status", "last_error_code", "updated_at",
+        "provisioned_at", "installed_at", "status", "last_error_code", "next_retry_at", "updated_at",
     ])
     order = record.order_item.order
     if order.status == Order.Status.PAID:
@@ -210,7 +213,11 @@ def sync_pelican_server(server_record_id, *, client=None):
         except PelicanAPIError as exc:
             record.status = PelicanServer.Status.FAILED
             record.last_error_code = exc.code[:64]
-            record.save(update_fields=["status", "last_error_code", "updated_at"])
+            retry_seconds = min(60 * (2 ** min(max(record.attempts - 1, 0), 8)), 21600)
+            record.next_retry_at = timezone.now() + timedelta(seconds=retry_seconds)
+            record.save(update_fields=[
+                "status", "last_error_code", "next_retry_at", "updated_at"
+            ])
             return record
 
 
