@@ -117,6 +117,8 @@ def _server_payload(record):
         raise PelicanAPIError("invalid_resource_limits")
     if any(feature_limits[key] < 0 for key in required_features):
         raise PelicanAPIError("invalid_feature_limits")
+    if "threads" in limits and limits["threads"] is not None and not isinstance(limits["threads"], str):
+        raise PelicanAPIError("invalid_resource_limits")
     if any(not isinstance(key, str) or not key or not isinstance(value, (str, int, float, bool))
            for key, value in environment.items()):
         raise PelicanAPIError("invalid_environment")
@@ -154,6 +156,14 @@ def _apply_remote_state(record, remote):
     remote_id, external_id = _panel_attributes(remote)
     if external_id != record.external_id:
         raise PelicanAPIError("server_identity_mismatch")
+    try:
+        account = PelicanAccount.objects.get(
+            customer=record.customer, status=PelicanAccount.Status.LINKED
+        )
+    except PelicanAccount.DoesNotExist:
+        raise PelicanAPIError("pelican_account_not_linked") from None
+    if type(remote.get("user")) is not int or remote["user"] != account.panel_user_id:
+        raise PelicanAPIError("server_owner_mismatch")
     container = remote.get("container")
     installed_at = remote.get("installed_at") or (container.get("installed") if isinstance(container, dict) else False)
     record.panel_server_id = remote_id
