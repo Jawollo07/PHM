@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PHM – Meine Abonnements</title>
+<style>
+body{margin:0;padding:2rem 1rem;background:#f3f6fb;color:#172033;font-family:system-ui,sans-serif}
+main{max-width:900px;margin:auto}.subscription{background:white;border:1px solid #e2e8f0;border-radius:12px;padding:1.25rem;margin:1rem 0}
+.muted{color:#64748b;font-size:.9rem}.actions{display:flex;gap:.5rem;flex-wrap:wrap}
+button{padding:.65rem .9rem;border:0;border-radius:8px;background:#3156a5;color:white;font-weight:650;cursor:pointer}
+button.secondary{background:#e2e8f0;color:#172033}.notice{padding:.75rem 1rem;background:white;border-radius:8px}
+</style>
+</head>
+<body><main>
+<p><a href="{% url 'account' %}">← Mein Konto</a></p>
+<h1>Meine Abonnements</h1>
+<p class="muted">Automatische Verlängerungen werden ausschließlich aus deinem PHM-Guthaben bezahlt. Sie sind standardmäßig deaktiviert.</p>
+{% for message in messages %}<p class="notice" role="status">{{ message }}</p>{% endfor %}
+{% for subscription in subscriptions %}
+<article class="subscription">
+    <h2>{{ subscription.plan.name }}</h2>
+    <p>Status: <strong>{{ subscription.get_status_display }}</strong></p>
+    <p>Preis: {{ subscription.price_eur|floatformat:2 }} EUR je
+        {{ subscription.billing_interval_count }} {{ subscription.billing_interval_unit }}</p>
+    <p>Aktueller Zeitraum: {{ subscription.current_period_start|date:"d.m.Y" }} – {{ subscription.current_period_end|date:"d.m.Y" }}</p>
+    <p>Nächste Fälligkeit: {{ subscription.next_billing_at|date:"d.m.Y H:i" }}</p>
+    <p>Automatische Verlängerung: {% if subscription.auto_renew %}Aktiv{% else %}Deaktiviert{% endif %}</p>
+    {% if subscription.cancel_at_period_end %}<p>Die Kündigung zum Periodenende ist vorgemerkt.</p>{% endif %}
+    {% if subscription.status == "active" or subscription.status == "past_due" %}
+    <div class="actions">
+        {% if subscription.auto_renew and not subscription.cancel_at_period_end %}
+        <form method="post" action="{% url 'subscription_action' subscription.id %}">{% csrf_token %}<input type="hidden" name="action" value="disable_auto_renew"><button class="secondary" type="submit">Automatische Verlängerung ausschalten</button></form>
+        {% elif not subscription.auto_renew and not subscription.cancel_at_period_end %}
+        <form method="post" action="{% url 'subscription_action' subscription.id %}">{% csrf_token %}<input type="hidden" name="action" value="enable_auto_renew"><button type="submit">Automatische Verlängerung aktivieren</button></form>
+        {% endif %}
+        {% if not subscription.cancel_at_period_end %}
+        <form method="post" action="{% url 'subscription_action' subscription.id %}">{% csrf_token %}<input type="hidden" name="action" value="cancel_at_period_end"><button class="secondary" type="submit">Zum Periodenende kündigen</button></form>
+        {% endif %}
+    </div>
+    {% endif %}
+</article>
+{% empty %}
+<p>Du hast noch keine Abonnements.</p>
+{% endfor %}
+</main></body></html>
