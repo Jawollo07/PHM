@@ -61,7 +61,7 @@ POSTGRES_STATEMENTS = (
     """CREATE OR REPLACE FUNCTION phm_guard_order_update()
     RETURNS trigger
     LANGUAGE plpgsql
-    AS $
+    AS $phm$
     BEGIN
         IF NEW.customer_id IS DISTINCT FROM OLD.customer_id
            OR NEW.currency IS DISTINCT FROM OLD.currency
@@ -83,7 +83,7 @@ POSTGRES_STATEMENTS = (
         END IF;
         RETURN NEW;
     END;
-    $""",
+    $phm$""",
     """CREATE TRIGGER orders_guard_update
     BEFORE UPDATE ON orders
     FOR EACH ROW EXECUTE FUNCTION phm_guard_order_update()""",
