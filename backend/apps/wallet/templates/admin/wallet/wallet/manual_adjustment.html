@@ -4,7 +4,7 @@
 {% block content %}
   <p>Manuelle Gutschriften und Belastungen werden als unveränderliche Ledger-Buchungen gespeichert. Jede Änderung benötigt eine Begründung und wird dem angemeldeten Administrator zugeordnet.</p>
   <p><strong>Wichtig:</strong> Es wird niemals direkt ein Kontostand überschrieben.</p>
-  <form method="post" novalidate>
+  <form method="post" novalidate onsubmit="return confirm('Diese Guthabenbuchung wird dauerhaft und unveränderlich gespeichert. Fortfahren?');">
     {% csrf_token %}
     {{ form.non_field_errors }}
     <fieldset class="module aligned">
