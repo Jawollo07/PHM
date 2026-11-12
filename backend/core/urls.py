@@ -1,5 +1,6 @@
 from django.contrib import admin
 from django.contrib.auth import views as auth_views
+from apps.auth.password_forms import SynchronizedPasswordChangeForm, SynchronizedSetPasswordForm
 from django.urls import path
 
 from apps.auth.forms import VerifiedPasswordResetForm
@@ -37,6 +38,7 @@ urlpatterns = [
         "auth/password-reset/confirm/<uidb64>/<token>/",
         auth_views.PasswordResetConfirmView.as_view(
             template_name="auth/password_reset_confirm.html",
+            form_class=SynchronizedSetPasswordForm,
             success_url="/auth/password-reset/complete/",
         ),
         name="password_reset_confirm",
