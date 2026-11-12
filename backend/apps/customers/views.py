@@ -6,7 +6,8 @@ from django.contrib.auth.decorators import login_required
 from django.db import transaction
 from django.shortcuts import redirect, render
 
-from apps.auth.models import UserProfile
+from apps.auth.models import EmailVerification, UserProfile
+from apps.auth.services import issue_email_verification
 from apps.customers.forms import AccountDetailsForm
 from apps.customers.models import Customer, CustomerAddress, CustomerSettings
 from apps.customers.services import provision_personal_customer
@@ -124,6 +125,7 @@ def _save_account_details(user, form):
     ):
         setattr(customer_settings, field, data[field])
     customer_settings.save()
+    return email_changed
 
 
 @login_required(login_url="auth")
@@ -155,8 +157,20 @@ def account_view(request):
     )
     if request.method == "POST" and form.is_valid():
         with transaction.atomic():
-            _save_account_details(user, form)
+            email_changed = _save_account_details(user, form)
+            if email_changed:
+                issue_email_verification(
+                    user,
+                    request=request,
+                    purpose=EmailVerification.Purpose.EMAIL_CHANGE,
+                )
         messages.success(request, "Deine Kontodaten wurden gespeichert.")
+        if email_changed:
+            messages.info(
+                request,
+                "Deine E-Mail-Adresse ist noch nicht bestätigt. "
+                "Wir haben dir einen neuen Bestätigungslink gesendet.",
+            )
         return redirect("account")
 
     customer_settings_details = get_customer_settings(user)
@@ -164,7 +178,11 @@ def account_view(request):
         request,
         "customers/index.html",
         {
-            "user_details": {"username": user.username, "email": user.email},
+            "user_details": {
+                "username": user.username,
+                "email": user.email,
+                "email_verified": user.email_verified,
+            },
             "customer_details": get_customer_details(user),
             "wallet_details": get_wallet_details(user),
             "customer_address": get_customer_address(user),
