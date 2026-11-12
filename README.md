@@ -158,3 +158,14 @@ Never commit passwords, private signing keys, API tokens, production database cr
 PHM is an early-stage Django application. The current repository should be treated as a development scaffold, not as a production-ready hosting platform. Online payments are intentionally excluded; wallet funding is administrator-managed. A GitHub Actions workflow now runs Django checks, migration consistency checks and the backend test suite on pushes and pull requests.
 
 Verify model/migration history before applying schema changes to a database containing data. The authentication and customer migration history has been extended to provision personal customer records and wallets. Always back up an existing database before applying migrations, and verify the migration plan against a copy first.
+
+## Scheduled operations
+
+The repository includes systemd unit templates under `deploy/systemd/`:
+
+- `phm-ledger-integrity.timer`: verifies the signed ledger daily at 04:00 Europe/Berlin.
+- `phm-subscription-renewals.timer`: processes subscription renewals daily at 04:15 Europe/Berlin. Only subscriptions for which the customer explicitly enabled automatic renewal are charged.
+
+Before installing, adjust `User`, `Group`, `WorkingDirectory`, the virtualenv path and `EnvironmentFile` in both service units to the actual deployment. Create the first signed ledger anchor once with `python manage.py checkpoint_ledger`; the daily verifier requires an existing checkpoint. Then install the units, run `systemctl daemon-reload` and enable the timers with `systemctl enable --now phm-ledger-integrity.timer phm-subscription-renewals.timer`. Check execution with `systemctl list-timers` and `journalctl -u phm-ledger-integrity.service -u phm-subscription-renewals.service`.
+
+These are deployment templates only. They are not activated on a server by committing them to the repository.
