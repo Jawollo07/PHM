@@ -1,0 +1,10 @@
+<!doctype html>
+<html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>PHM – Bestelldetails</title></head>
+<body><main><p><a href="{% url 'orders' %}">← Meine Bestellungen</a></p><h1>Bestellung {{ order.id }}</h1>
+<p>Status: {{ order.get_status_display }}</p><p>Erstellt: {{ order.created_at|date:"d.m.Y H:i" }}</p>
+{% if order.paid_at %}<p>Bezahlt: {{ order.paid_at|date:"d.m.Y H:i" }}</p>{% endif %}
+<h2>Positionen</h2>
+{% for item in order.items.all %}<article><h3>{{ item.product_name }} – {{ item.plan_name }}</h3><p>{{ item.description }}</p><p>{{ item.quantity }} × {{ item.unit_price_cents }} Cent</p><p>Einrichtung: {{ item.setup_fee_cents }} Cent</p><p>Gesamt: {{ item.line_total_cents }} Cent</p></article>{% endfor %}
+<p><strong>Gesamt: {{ order.total_cents }} Cent {{ order.currency }}</strong></p>
+{% if order.paid_transaction %}<p>Ledger-Buchung: {{ order.paid_transaction_id }}</p>{% endif %}
+</main></body></html>
