@@ -1,4 +1,5 @@
 import pycountry
+from decimal import Decimal
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
@@ -9,6 +10,7 @@ from apps.auth.models import UserProfile
 from apps.customers.forms import AccountDetailsForm
 from apps.customers.models import Customer, CustomerAddress, CustomerSettings
 from apps.customers.services import provision_personal_customer
+from apps.wallet.models import Wallet
 
 
 def get_customer_details(user):
@@ -164,6 +166,7 @@ def account_view(request):
         {
             "user_details": {"username": user.username, "email": user.email},
             "customer_details": get_customer_details(user),
+            "wallet_details": get_wallet_details(user),
             "customer_address": get_customer_address(user),
             "customer_settings": customer_settings_details,
             "customer_notification_settings": (
