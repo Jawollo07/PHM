@@ -2,7 +2,7 @@
 
 A Django-based customer and billing platform for managing hosting services backed by Pelican Panel.
 
-PHM is under active development. The repository contains the Django project, authentication, personal-customer account provisioning and an initial wallet ledger/service foundation. Payment processing, hosting orders, subscriptions, invoices and Pelican provisioning are not yet integrated into a complete end-to-end product.
+PHM is under active development. The repository contains Django authentication, private-customer account provisioning, a signed wallet ledger, administrator ledger tools and the first customer-facing account pages. Hosting catalog, orders, subscriptions, invoices and Pelican provisioning are not yet integrated into a complete end-to-end product.
 
 ## Product scope
 
@@ -30,7 +30,7 @@ The Django project is located in `backend/`. Its project package is `backend/cor
 
 ### `apps.auth`
 
-Owns user identity and authentication. The current custom user model uses a username for login and stores a unique email address. The app also contains user-profile and email-verification models.
+Owns user identity and authentication. The current custom user model uses a username for login and stores a unique email address. Registration creates a personal customer, profile, settings and wallet atomically. Email verification uses one-time tokens whose SHA-256 hashes are stored in the database. Unverified users cannot log in. Password reset links are sent only to verified email addresses.
 
 ### `apps.customers`
 
@@ -44,12 +44,11 @@ There are no business-account or customer-membership models. The account page re
 
 ### `apps.wallet`
 
-Owns the single EUR wallet for each personal customer. The repository now includes wallet, hold, signing-key, transaction and checkpoint models, initial migrations, idempotent transaction services, and a verification hook for the per-wallet hash/signature chain. The signing operation is injected through a provider callback; private signing keys are not stored in the PHM database. A production signing provider, externally retained checkpoints, database-level append-only enforcement and payment integration are still outstanding.
+Owns the single EUR wallet for each personal customer. The repository includes wallet, hold, signing-key, transaction and checkpoint models, idempotent transaction services, administrator-only manual adjustments, a read-only searchable ledger admin and signed checkpoint support. `verify_ledger` checks every wallet hash/signature chain and the latest checkpoint against the live ledger. `checkpoint_ledger` verifies the current state before appending a new signed checkpoint. Private signing keys are loaded from environment configuration and are not stored in the PHM database. Externally retained checkpoints and database-level append-only enforcement are still outstanding.
 
 ### Planned domain applications
 
 The following areas remain planned and are not yet complete:
-- `payments`: payment-provider integrations, manual payment verification and webhook handling;
 - `catalog`: hosting products, plans and prices;
 - `orders`: customer purchases;
 - `subscriptions`: recurring hosting contracts and renewals;
@@ -63,7 +62,7 @@ These are mandatory domain invariants for the wallet implementation:
 
 1. Exactly one wallet per customer.
 2. Store money as integer EUR cents. Never use floating-point values for money.
-3. All top-ups, purchases, renewals, refunds and administrator adjustments affect the same wallet.
+3. Purchases, renewals, refunds and administrator adjustments affect the same wallet. Wallet funding is manual and administrator-controlled.
 4. Every posted balance change must create a corresponding ledger entry in the same database transaction.
 5. Ledger entries are append-only. Corrections are represented by compensating entries, not by editing history.
 6. Credits are positive and debits are negative.
@@ -111,6 +110,7 @@ python -m pip install -r requirements.txt
 python manage.py check
 python manage.py showmigrations
 python manage.py migrate
+python manage.py test
 ```
 
 Start the development server:
@@ -136,10 +136,10 @@ Before deploying PHM:
 - add tests for authorization, customer isolation, wallet concurrency and payment idempotency;
 - establish encrypted backups and a tested restore procedure.
 
-Never commit passwords, private signing keys, API tokens, production database credentials or other secrets.
+Never commit passwords, private signing keys, API tokens, production database credentials or other secrets. Configure `WALLET_LEDGER_KEY_ID`, `WALLET_LEDGER_SIGNER` and `WALLET_LEDGER_PRIVATE_KEY_B64` before using ledger signing or checkpoint commands.
 
 ## Development status
 
-PHM is an early-stage Django application. The current repository should be treated as a development scaffold, not as a production-ready billing or hosting platform. Online payments are intentionally excluded; wallet funding is administrator-managed.
+PHM is an early-stage Django application. The current repository should be treated as a development scaffold, not as a production-ready hosting platform. Online payments are intentionally excluded; wallet funding is administrator-managed. A GitHub Actions workflow now runs Django checks, migration consistency checks and the backend test suite on pushes and pull requests.
 
 Verify model/migration history before applying schema changes to a database containing data. The authentication and customer migration history has been extended to provision personal customer records and wallets. Always back up an existing database before applying migrations, and verify the migration plan against a copy first.
