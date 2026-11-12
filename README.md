@@ -2,7 +2,7 @@
 
 A Django-based customer and billing platform for managing hosting services backed by Pelican Panel.
 
-PHM is under active development. The repository now contains verified private-customer authentication, an administrator-managed hosting catalog, wallet-funded customer checkout, signed wallet accounting and opt-in recurring subscriptions. Invoice issuance and automatic server allocation remain incomplete. Verified PHM customers are now automatically created or matched and linked as Pelican panel users.
+PHM is under active development. The repository now contains verified private-customer authentication, an administrator-managed hosting catalog, wallet-funded customer checkout, signed wallet accounting and opt-in recurring subscriptions. Invoice issuance and server lifecycle automation remain incomplete. Verified PHM customers are now automatically created or matched and linked as Pelican panel users.
 
 ## Product scope
 
@@ -205,6 +205,6 @@ The repository includes systemd unit templates under `deploy/systemd/`:
 - `phm-ledger-integrity.timer`: verifies the signed ledger daily at 04:00 Europe/Berlin.
 - `phm-subscription-renewals.timer`: processes subscription renewals daily at 04:15 Europe/Berlin. Only subscriptions for which the customer explicitly enabled automatic renewal are charged.\n- `phm-pelican-provisioning.timer`: creates and reconciles Pelican servers every minute, including failed jobs whose retry backoff has expired.\n- `phm-pelican-provisioning.timer`: creates and reconciles Pelican servers every minute, including retries whose backoff has expired.
 
-Before installing, adjust `User`, `Group`, `WorkingDirectory`, the virtualenv path and `EnvironmentFile` in all service units to the actual deployment. Create the first signed ledger anchor once with `python manage.py checkpoint_ledger`; the daily verifier requires an existing checkpoint. Then install the units, run `systemctl daemon-reload` and enable the timers with `systemctl enable --now phm-ledger-integrity.timer phm-subscription-renewals.timer phm-pelican-provisioning.timer phm-pelican-provisioning.timer`. Check execution with `systemctl list-timers` and `journalctl -u phm-ledger-integrity.service -u phm-subscription-renewals.service`.
+Before installing, adjust `User`, `Group`, `WorkingDirectory`, the virtualenv path and `EnvironmentFile` in all service units to the actual deployment. Create the first signed ledger anchor once with `python manage.py checkpoint_ledger`; the daily verifier requires an existing checkpoint. Then install the units, run `systemctl daemon-reload` and enable the timers with `systemctl enable --now phm-ledger-integrity.timer phm-subscription-renewals.timer phm-pelican-provisioning.timer`. Check execution with `systemctl list-timers` and `journalctl -u phm-ledger-integrity.service -u phm-subscription-renewals.service -u phm-pelican-provisioning.service`.
 
 These are deployment templates only. They are not activated on a server by committing them to the repository.
