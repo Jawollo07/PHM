@@ -52,6 +52,12 @@ class WalletModelTests(TestCase):
         with self.assertRaises(TypeError):
             self.wallet.save(update_fields=["balance_cents", "updated_at"])
 
+    def test_wallet_bulk_create_cannot_seed_a_balance(self):
+        with self.assertRaises(TypeError):
+            Wallet.objects.bulk_create([
+                Wallet(customer=self.user.customer, balance_cents=100)
+            ])
+
     def test_database_rejects_negative_wallet_balance(self):
         from django.db import connection
 
