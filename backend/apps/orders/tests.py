@@ -1,5 +1,6 @@
 from django.contrib.auth import get_user_model
 from django.test import TestCase
+from django.urls import reverse
 
 from apps.catalog.models import HostingPlan, HostingProduct
 from apps.wallet.models import LedgerSigningKey, Wallet
@@ -381,19 +382,15 @@ class CustomerOrderViewsTests(TestCase):
         self.assertNotContains(response, "Hidden plan")
 
     def test_customer_can_purchase_a_plan_using_wallet_balance(self):
-        from django.test import override_settings
-        from django.urls import reverse
-
         self.fund_wallet()
         key = "d5db8d5e-4ad4-4f50-8d8d-07f03fd45b42"
         with self.signed_settings():
             response = self.client.post(
                 reverse("purchase_plan", args=[self.plan.pk]),
                 {"idempotency_key": key},
-                follow=True,
             )
 
-        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.status_code, 302)
         self.assertRedirects(response, reverse("orders"))
         order = Order.objects.get(customer=self.user.customer)
         self.wallet.refresh_from_db()
@@ -444,6 +441,15 @@ class CustomerOrderViewsTests(TestCase):
             username="other-portal-customer",
             email="other-portal@example.com",
             password="secure-test-password",
+        )
+        from apps.wallet.services import credit_wallet
+        credit_wallet(
+            other_user.customer.wallet.pk,
+            5000,
+            description="Other customer funding",
+            idempotency_key="other-customer-funding-001",
+            signing_key_id=self.key.pk,
+            signer=self.private_key.sign,
         )
         other_order = place_order(
             other_user.customer.pk,
