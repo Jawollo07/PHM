@@ -156,6 +156,65 @@ class WalletServiceTests(TestCase):
                 signer=self.signer,
             )
 
+    def test_admin_adjustment_records_credit_and_debit_as_admin_adjustments(self):
+        from apps.wallet.models import WalletTransaction
+        from apps.wallet.services import adjust_wallet_balance
+
+        credit = adjust_wallet_balance(
+            self.wallet.pk,
+            2500,
+            description="Manual admin credit",
+            idempotency_key="admin-adjust-credit",
+            signing_key_id=self.key.pk,
+            signer=self.signer,
+            metadata={"source": "django_admin_manual_adjustment", "admin_user_id": "staff-1"},
+        )
+        debit = adjust_wallet_balance(
+            self.wallet.pk,
+            -700,
+            description="Manual admin debit",
+            idempotency_key="admin-adjust-debit",
+            signing_key_id=self.key.pk,
+            signer=self.signer,
+            metadata={"source": "django_admin_manual_adjustment", "admin_user_id": "staff-1"},
+        )
+
+        self.wallet.refresh_from_db()
+        self.assertEqual(credit.type, WalletTransaction.Type.ADMIN_ADJUSTMENT)
+        self.assertEqual(credit.amount_cents, 2500)
+        self.assertEqual(debit.type, WalletTransaction.Type.ADMIN_ADJUSTMENT)
+        self.assertEqual(debit.amount_cents, -700)
+        self.assertEqual(debit.metadata["admin_user_id"], "staff-1")
+        self.assertEqual(self.wallet.balance_cents, 1800)
+
+    def test_admin_adjustment_cannot_overdraw_wallet(self):
+        from apps.wallet.services import InsufficientFunds, adjust_wallet_balance
+
+        with self.assertRaises(InsufficientFunds):
+            adjust_wallet_balance(
+                self.wallet.pk,
+                -1,
+                description="Invalid manual debit",
+                idempotency_key="admin-adjust-overdraw",
+                signing_key_id=self.key.pk,
+                signer=self.signer,
+            )
+
+    def test_admin_adjustment_rejects_zero_and_float_amounts(self):
+        from apps.wallet.services import InvalidLedgerOperation, adjust_wallet_balance
+
+        for amount in (0, 1.25, True):
+            with self.subTest(amount=amount):
+                with self.assertRaises(InvalidLedgerOperation):
+                    adjust_wallet_balance(
+                        self.wallet.pk,
+                        amount,
+                        description="Invalid amount",
+                        idempotency_key=f"admin-adjust-invalid-{amount}",
+                        signing_key_id=self.key.pk,
+                        signer=self.signer,
+                    )
+
     def test_signed_ledger_chain_can_be_verified(self):
         from apps.wallet.services import credit_wallet, verify_wallet_chain
 
