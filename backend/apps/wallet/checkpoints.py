@@ -19,45 +19,74 @@ def _canonical_bytes(payload: dict) -> bytes:
 
 
 def _ledger_snapshot() -> tuple[str, int, int]:
-    """Return a deterministic root hash, transaction count and wallet count."""
-    latest_hash = WalletTransaction.objects.filter(
-        wallet_id=OuterRef("pk")
-    ).order_by("-sequence_number").values("entry_hash")[:1]
-    latest_balance = WalletTransaction.objects.filter(
-        wallet_id=OuterRef("pk")
-    ).order_by("-sequence_number").values("balance_after_cents")[:1]
-    latest_sequence = WalletTransaction.objects.filter(
-        wallet_id=OuterRef("pk")
-    ).order_by("-sequence_number").values("sequence_number")[:1]
+    """Return a deterministic root after checking every wallet's structural chain."""
+    states = {}
+    transactions = WalletTransaction.objects.select_related(
+        "signing_key"
+    ).order_by("wallet_id", "sequence_number")
 
-    wallets = Wallet.objects.annotate(
-        tx_count=Count("transactions"),
-        latest_hash=Subquery(latest_hash),
-        latest_balance=Subquery(latest_balance),
-        latest_sequence=Subquery(latest_sequence),
-    ).order_by("pk")
+    for entry in transactions.iterator():
+        state = states.setdefault(
+            entry.wallet_id,
+            {
+                "sequence": 0,
+                "hash": GENESIS_HASH,
+                "balance": 0,
+                "count": 0,
+            },
+        )
+        expected_sequence = state["sequence"] + 1
+        if entry.sequence_number != expected_sequence:
+            raise ValueError(f"Wallet {entry.wallet_id} has a broken ledger sequence.")
+        if entry.previous_hash != state["hash"]:
+            raise ValueError(f"Wallet {entry.wallet_id} has a broken ledger hash link.")
+
+        payload = {
+            "payload_version": entry.payload_version,
+            "wallet_id": str(entry.wallet_id),
+            "sequence_number": entry.sequence_number,
+            "type": entry.type,
+            "amount_cents": entry.amount_cents,
+            "balance_after_cents": entry.balance_after_cents,
+            "description": entry.description,
+            "idempotency_key": entry.idempotency_key,
+            "reference": entry.reference,
+            "metadata": entry.metadata,
+            "previous_hash": entry.previous_hash,
+            "signing_key_id": entry.signing_key.key_id,
+            "created_at": entry.created_at.isoformat(),
+        }
+        canonical_payload = _canonical_bytes(payload)
+        if hashlib.sha256(canonical_payload).hexdigest() != entry.entry_hash:
+            raise ValueError(f"Wallet {entry.wallet_id} contains an invalid transaction hash.")
+
+        next_balance = state["balance"] + entry.amount_cents
+        if next_balance < 0 or entry.balance_after_cents != next_balance:
+            raise ValueError(f"Wallet {entry.wallet_id} has an inconsistent balance history.")
+
+        state["sequence"] = entry.sequence_number
+        state["hash"] = entry.entry_hash
+        state["balance"] = next_balance
+        state["count"] += 1
 
     leaves = []
     transaction_count = 0
     wallet_count = 0
-    for wallet in wallets.iterator():
+    for wallet in Wallet.objects.order_by("pk").iterator():
+        state = states.get(
+            wallet.pk,
+            {"sequence": 0, "hash": GENESIS_HASH, "balance": 0, "count": 0},
+        )
+        if state["balance"] != wallet.balance_cents:
+            raise ValueError(f"Wallet {wallet.pk} balance does not match its ledger.")
         wallet_count += 1
-        transaction_count += wallet.tx_count
-        if wallet.tx_count:
-            if wallet.latest_balance != wallet.balance_cents:
-                raise ValueError(
-                    f"Wallet {wallet.pk} balance does not match its latest ledger entry."
-                )
-        elif wallet.balance_cents != 0:
-            raise ValueError(
-                f"Wallet {wallet.pk} has a non-zero balance but no ledger entries."
-            )
+        transaction_count += state["count"]
         leaves.append({
             "wallet_id": str(wallet.pk),
             "balance_cents": wallet.balance_cents,
-            "transaction_count": wallet.tx_count,
-            "last_sequence": wallet.latest_sequence or 0,
-            "last_entry_hash": wallet.latest_hash or GENESIS_HASH,
+            "transaction_count": state["count"],
+            "last_sequence": state["sequence"],
+            "last_entry_hash": state["hash"],
         })
 
     root_hash = hashlib.sha256(_canonical_bytes(leaves)).hexdigest()
