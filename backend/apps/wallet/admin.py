@@ -94,7 +94,6 @@ class WalletAdmin(admin.ModelAdmin):
         return custom_urls + super().get_urls()
 
     def changelist_view(self, request, extra_context=None):
-        self._current_request = request
         extra_context = extra_context or {}
         extra_context["can_adjust_wallet"] = request.user.has_perm(
             "wallet.adjust_wallet_balance"
