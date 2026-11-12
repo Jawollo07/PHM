@@ -28,12 +28,14 @@ def sync_pelican_account(account_id, *, client=None):
         first_name = display_name or user.username
         remote, _created = client.ensure_user(
             email=user.email,
-            username=user.username,
+            username=f"{user.username[:140]}-{account.customer_id.hex[:8]}",
             first_name=first_name,
         )
+        if not isinstance(remote, dict):
+            raise PelicanAPIError("invalid_user_response")
         remote_email = remote.get("email", "")
         remote_id = remote.get("id")
-        if not remote_id or remote_email.casefold() != user.email.casefold():
+        if type(remote_id) is not int or remote_id < 1 or not isinstance(remote_email, str) or remote_email.casefold() != user.email.casefold():
             raise PelicanAPIError("panel_identity_mismatch")
     except PelicanAPIError as exc:
         account.status = PelicanAccount.Status.FAILED
