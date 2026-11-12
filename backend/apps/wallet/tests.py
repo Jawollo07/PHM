@@ -390,3 +390,42 @@ class WalletSigningTests(TestCase):
             )
             self.assertTrue(verify_payload(public_key, payload, signature))
             self.assertFalse(verify_payload(public_key, b"tampered", signature))
+
+
+class ManualWalletAdjustmentFormTests(TestCase):
+    def test_amount_is_converted_to_integer_euro_cents(self):
+        from apps.wallet.admin import ManualWalletAdjustmentForm
+
+        user = get_user_model().objects.create_user(
+            username="form-user",
+            email="form@example.com",
+            password="secure-test-password",
+        )
+        form = ManualWalletAdjustmentForm(data={
+            "wallet": str(user.customer.wallet.pk),
+            "direction": "credit",
+            "amount_eur": "12.34",
+            "reason": "Manual test credit",
+            "reference": "",
+            "idempotency_key": "7f8e8a0b-5db0-4c29-8df0-55bb4d6ed90a",
+        })
+        self.assertTrue(form.is_valid(), form.errors)
+        self.assertEqual(form.cleaned_data["amount_eur"], 1234)
+
+    def test_amount_requires_cent_precision(self):
+        from apps.wallet.admin import ManualWalletAdjustmentForm
+
+        user = get_user_model().objects.create_user(
+            username="form-user-2",
+            email="form2@example.com",
+            password="secure-test-password",
+        )
+        form = ManualWalletAdjustmentForm(data={
+            "wallet": str(user.customer.wallet.pk),
+            "direction": "credit",
+            "amount_eur": "12.345",
+            "reason": "Manual test credit",
+            "reference": "",
+            "idempotency_key": "7f8e8a0b-5db0-4c29-8df0-55bb4d6ed091",
+        })
+        self.assertFalse(form.is_valid())
