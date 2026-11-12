@@ -12,6 +12,7 @@ class Migration(migrations.Migration):
             options={
                 "verbose_name": "Wallet",
                 "verbose_name_plural": "Wallets",
+                "db_table": "wallets",
                 "permissions": [
                     ("adjust_wallet_balance", "Can manually adjust customer wallet balances"),
                 ],
