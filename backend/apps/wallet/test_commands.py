@@ -74,7 +74,7 @@ class VerifyLedgerCommandTests(TestCase):
 
         self.assertEqual(self.key.checkpoints.count(), 1)
 
-    def test_checkpoint_command_refuses_to_anchor_changed_wallet_balance(self):
+    def test_checkpoint_command_refuses_to_anchor_changed_wallet_set(self):
         import base64
 
         from django.test import override_settings
