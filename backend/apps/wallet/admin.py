@@ -8,6 +8,7 @@ from django.core.exceptions import ImproperlyConfigured, PermissionDenied
 from django.http import HttpResponseRedirect
 from django.shortcuts import render
 from django.urls import path, reverse
+from django.db.models import Prefetch
 from django.utils.html import format_html
 from django.utils.module_loading import import_string
 
@@ -94,6 +95,16 @@ class WalletAdmin(admin.ModelAdmin):
     list_select_related = ("customer__user",)
     readonly_fields = tuple(field.name for field in Wallet._meta.fields)
 
+    def get_queryset(self, request):
+        queryset = super().get_queryset(request)
+        return queryset.prefetch_related(
+            Prefetch(
+                "holds",
+                queryset=WalletHold.objects.filter(status=WalletHold.Status.ACTIVE),
+                to_attr="active_holds",
+            )
+        )
+
     def get_urls(self):
         custom_urls = [
             path(
@@ -123,7 +134,8 @@ class WalletAdmin(admin.ModelAdmin):
 
     @admin.display(description="Verfügbar")
     def available_balance_eur(self, obj):
-        return eur(obj.available_balance_cents)
+        reserved = sum(hold.amount_cents for hold in obj.active_holds)
+        return eur(obj.balance_cents - reserved)
 
     @admin.display(description="Aktion")
     def manual_adjustment_link(self, obj):
