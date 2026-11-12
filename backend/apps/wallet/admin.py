@@ -115,6 +115,11 @@ class WalletAdmin(admin.ModelAdmin):
                 signing_key = LedgerSigningKey.objects.get(
                     status=LedgerSigningKey.Status.ACTIVE
                 )
+                configured_key_id = getattr(settings, "WALLET_LEDGER_KEY_ID", "")
+                if not configured_key_id or configured_key_id != signing_key.key_id:
+                    raise ImproperlyConfigured(
+                        "WALLET_LEDGER_KEY_ID muss zum aktiven Ledger-Schlüssel passen."
+                    )
                 amount_cents = form.cleaned_data["amount_eur"]
                 reason = form.cleaned_data["reason"].strip()
                 if not reason:
