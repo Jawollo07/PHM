@@ -132,3 +132,7 @@ EMAIL_BACKEND = os.environ.get(
     'django.core.mail.backends.console.EmailBackend',
 )
 DEFAULT_FROM_EMAIL = os.environ.get('DJANGO_DEFAULT_FROM_EMAIL', 'noreply@localhost')
+
+# Dotted import path to an external Ed25519 signing adapter callable(payload: bytes) -> bytes.
+# Leave unset to fail closed: manual wallet adjustments stay disabled.
+WALLET_LEDGER_SIGNER = os.environ.get('WALLET_LEDGER_SIGNER', '')
