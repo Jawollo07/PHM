@@ -1,0 +1,90 @@
+from django.db import migrations
+
+
+SQLITE_STATEMENTS = (
+    """CREATE TRIGGER subscriptions_reject_delete
+    BEFORE DELETE ON subscriptions
+    BEGIN
+        SELECT RAISE(ABORT, 'Subscription history is immutable.');
+    END""",
+    """CREATE TRIGGER subscriptions_reject_terms_update
+    BEFORE UPDATE ON subscriptions
+    WHEN NEW.customer_id IS NOT OLD.customer_id
+      OR NEW.order_item_id IS NOT OLD.order_item_id
+      OR NEW.plan_id IS NOT OLD.plan_id
+      OR NEW.currency IS NOT OLD.currency
+      OR NEW.price_cents IS NOT OLD.price_cents
+      OR NEW.billing_interval_unit IS NOT OLD.billing_interval_unit
+      OR NEW.billing_interval_count IS NOT OLD.billing_interval_count
+      OR NEW.created_at IS NOT OLD.created_at
+    BEGIN
+        SELECT RAISE(ABORT, 'Subscription ownership and billing terms are immutable.');
+    END""",
+)
+
+POSTGRES_STATEMENTS = (
+    """CREATE OR REPLACE FUNCTION phm_guard_subscription_history()
+    RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+    BEGIN
+        IF TG_OP = 'DELETE' THEN
+            RAISE EXCEPTION 'Subscription history is immutable.';
+        END IF;
+        IF NEW.customer_id IS DISTINCT FROM OLD.customer_id
+           OR NEW.order_item_id IS DISTINCT FROM OLD.order_item_id
+           OR NEW.plan_id IS DISTINCT FROM OLD.plan_id
+           OR NEW.currency IS DISTINCT FROM OLD.currency
+           OR NEW.price_cents IS DISTINCT FROM OLD.price_cents
+           OR NEW.billing_interval_unit IS DISTINCT FROM OLD.billing_interval_unit
+           OR NEW.billing_interval_count IS DISTINCT FROM OLD.billing_interval_count
+           OR NEW.created_at IS DISTINCT FROM OLD.created_at THEN
+            RAISE EXCEPTION 'Subscription ownership and billing terms are immutable.';
+        END IF;
+        RETURN NEW;
+    END;
+    $$""",
+    """CREATE TRIGGER subscriptions_guard_history
+    BEFORE UPDATE OR DELETE ON subscriptions
+    FOR EACH ROW EXECUTE FUNCTION phm_guard_subscription_history()""",
+)
+
+
+def install_triggers(apps, schema_editor):
+    vendor = schema_editor.connection.vendor
+    with schema_editor.connection.cursor() as cursor:
+        if vendor == "sqlite":
+            for statement in SQLITE_STATEMENTS:
+                cursor.execute(statement)
+        elif vendor == "postgresql":
+            for statement in POSTGRES_STATEMENTS:
+                cursor.execute(statement)
+        else:
+            raise NotImplementedError(
+                "PHM subscription integrity triggers support SQLite and PostgreSQL only."
+            )
+
+
+def remove_triggers(apps, schema_editor):
+    vendor = schema_editor.connection.vendor
+    with schema_editor.connection.cursor() as cursor:
+        if vendor == "sqlite":
+            cursor.execute("DROP TRIGGER IF EXISTS subscriptions_reject_delete")
+            cursor.execute("DROP TRIGGER IF EXISTS subscriptions_reject_terms_update")
+        elif vendor == "postgresql":
+            cursor.execute(
+                "DROP TRIGGER IF EXISTS subscriptions_guard_history ON subscriptions"
+            )
+            cursor.execute(
+                "DROP FUNCTION IF EXISTS phm_guard_subscription_history()"
+            )
+
+
+class Migration(migrations.Migration):
+    dependencies = [
+        ("subscriptions", "0001_initial"),
+    ]
+
+    operations = [
+        migrations.RunPython(install_triggers, reverse_code=remove_triggers),
+    ]
