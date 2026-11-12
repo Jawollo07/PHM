@@ -40,14 +40,12 @@ class PelicanClient:
             "Content-Type": "application/json",
         })
         try:
-            # Never follow redirects: the Application API bearer token must not be
-            # forwarded to another host or downgraded to plain HTTP.
             opener = build_opener(_NoRedirectHandler())
             with opener.open(request, timeout=self.timeout) as response:
                 body = response.read(2_000_000)
                 return json.loads(body.decode("utf-8")) if body else {}
         except HTTPError as exc:
-            # Never persist or expose response bodies: they may contain panel details.
+            # Response bodies may contain panel details or user data. Do not persist them.
             raise PelicanAPIError(f"http_{exc.code}") from None
         except (URLError, TimeoutError, OSError):
             raise PelicanAPIError("connection_error") from None
@@ -76,6 +74,15 @@ class PelicanClient:
         })
         return response.get("attributes", {})
 
+    def ensure_user(self, *, email, username, first_name):
+        existing = self.find_user_by_email(email)
+        if existing:
+            return existing, False
+        created = self.create_user(email=email, username=username, first_name=first_name)
+        if not created.get("id") or created.get("email", "").casefold() != email.casefold():
+            raise PelicanAPIError("create_response_mismatch")
+        return created, True
+
     def update_user_password(self, panel_user_id, password):
         if not isinstance(password, str) or len(password) < 8:
             raise PelicanAPIError("invalid_password")
@@ -88,11 +95,31 @@ class PelicanClient:
         payload["password"] = password
         self._request("PATCH", f"users/{int(panel_user_id)}", payload)
 
-    def ensure_user(self, *, email, username, first_name):
-        existing = self.find_user_by_email(email)
-        if existing:
-            return existing, False
-        created = self.create_user(email=email, username=username, first_name=first_name)
-        if not created.get("id") or created.get("email", "").casefold() != email.casefold():
-            raise PelicanAPIError("create_response_mismatch")
-        return created, True
+    def find_server_by_external_id(self, external_id):
+        response = self._request(
+            "GET",
+            f"servers?{urlencode({'filter[external_id]': external_id, 'per_page': 100})}",
+        )
+        matches = [
+            row.get("attributes", {}) for row in response.get("data", [])
+            if row.get("attributes", {}).get("external_id") == external_id
+        ]
+        if len(matches) > 1:
+            raise PelicanAPIError("duplicate_external_id")
+        return matches[0] if matches else None
+
+    def create_server(self, payload):
+        response = self._request("POST", "servers", payload)
+        attributes = response.get("attributes", {})
+        if not isinstance(attributes, dict) or type(attributes.get("id")) is not int:
+            raise PelicanAPIError("create_server_response_invalid")
+        if attributes.get("external_id") != payload["external_id"]:
+            raise PelicanAPIError("create_server_identity_mismatch")
+        return attributes
+
+    def get_server(self, panel_server_id):
+        response = self._request("GET", f"servers/{int(panel_server_id)}")
+        attributes = response.get("attributes", {})
+        if not isinstance(attributes, dict) or type(attributes.get("id")) is not int:
+            raise PelicanAPIError("server_response_invalid")
+        return attributes
