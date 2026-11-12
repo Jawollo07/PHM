@@ -48,7 +48,7 @@ Contains administrator-managed hosting products and plans. Prices and setup fees
 
 ### `apps.orders`
 
-Contains wallet-funded order creation and the first order lifecycle. Placing a paid order reserves wallet funds through a hold; confirming payment captures the hold and writes a signed purchase transaction. Cancelling an unpaid order releases the reservation. Free plans can be ordered without creating a zero-value ledger entry. Order items preserve immutable product, plan, price, billing interval and resource snapshots. Orders are currently managed through read-only admin views; customer checkout and automated provisioning are still pending.
+Contains wallet-funded order creation and the first customer checkout flow. Placing a paid order reserves wallet funds through a hold; confirming payment captures the hold and writes a signed purchase transaction. Cancelling an unpaid order releases the reservation. Free plans can be ordered without creating a zero-value ledger entry. Order items preserve immutable product, plan, price, billing interval and resource snapshots. Customers can browse active catalog entries, purchase with their wallet and view only their own orders. Automated server provisioning is still pending.
 
 ### `apps.wallet`
 
