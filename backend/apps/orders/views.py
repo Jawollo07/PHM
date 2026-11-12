@@ -14,6 +14,7 @@ from django.utils.module_loading import import_string
 
 from apps.catalog.models import HostingPlan, HostingProduct
 from apps.wallet.models import LedgerSigningKey
+from apps.wallet.services import InsufficientFunds
 
 from .models import Order
 from .services import (
@@ -94,6 +95,9 @@ def purchase_plan_view(request, plan_id):
         return redirect("catalog")
     except IdempotencyConflict:
         messages.error(request, "Diese Bestellkennung wurde bereits für eine andere Bestellung verwendet.")
+        return redirect("catalog")
+    except InsufficientFunds:
+        messages.error(request, "Dein verfügbares Guthaben reicht für diesen Tarif nicht aus. Bitte wende dich an den Support, wenn eine manuelle Gutschrift benötigt wird.")
         return redirect("catalog")
     except OrderNotPayable as exc:
         messages.error(request, str(exc))
