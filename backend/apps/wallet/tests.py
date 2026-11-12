@@ -18,8 +18,22 @@ class WalletModelTests(TestCase):
         self.assertEqual(Wallet.objects.filter(customer=self.user.customer).count(), 1)
 
     def test_wallet_available_balance_excludes_active_holds(self):
-        self.wallet.balance_cents = 2500
-        self.wallet.save(update_fields=["balance_cents", "updated_at"])
+        from apps.wallet.services import credit_wallet
+
+        key = LedgerSigningKey.objects.create(
+            key_id="model-test-key",
+            label="Model test key",
+            public_key=b"model-test-public-key",
+            fingerprint="e" * 64,
+        )
+        credit_wallet(
+            self.wallet.pk,
+            2500,
+            description="Hold fixture",
+            idempotency_key="model-hold-credit",
+            signing_key_id=key.pk,
+            signer=lambda payload: b"model-test-signature",
+        )
         WalletHold.objects.create(
             wallet=self.wallet,
             amount_cents=700,
@@ -30,9 +44,23 @@ class WalletModelTests(TestCase):
         self.assertEqual(self.wallet.reserved_balance_cents, 700)
         self.assertEqual(self.wallet.available_balance_cents, 1800)
 
-    def test_wallet_balance_cannot_be_negative(self):
+    def test_wallet_balance_cannot_be_changed_outside_ledger_service(self):
+        with self.assertRaises(TypeError):
+            Wallet.objects.filter(pk=self.wallet.pk).update(balance_cents=500)
+
+        self.wallet.balance_cents = 500
+        with self.assertRaises(TypeError):
+            self.wallet.save(update_fields=["balance_cents", "updated_at"])
+
+    def test_database_rejects_negative_wallet_balance(self):
+        from django.db import connection
+
         with self.assertRaises(IntegrityError), transaction.atomic():
-            Wallet.objects.filter(pk=self.wallet.pk).update(balance_cents=-1)
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "UPDATE wallets SET balance_cents = -1 WHERE id = %s",
+                    [str(self.wallet.pk)],
+                )
 
     def test_transaction_cannot_be_updated_or_deleted(self):
         key = LedgerSigningKey.objects.create(
@@ -244,8 +272,13 @@ class LedgerCheckpointTests(TestCase):
     def test_checkpoint_refuses_balance_not_backed_by_ledger(self):
         from apps.wallet.checkpoints import create_ledger_checkpoint
 
-        self.wallet.balance_cents = 100
-        self.wallet.save(update_fields=["balance_cents", "updated_at"])
+        from django.db import connection
+
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "UPDATE wallets SET balance_cents = 100 WHERE id = %s",
+                [str(self.wallet.pk)],
+            )
 
         with self.assertRaises(ValueError):
             create_ledger_checkpoint(
