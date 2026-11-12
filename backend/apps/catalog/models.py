@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from django.core.exceptions import ValidationError
 from django.core.validators import MinValueValidator
 from django.db import models
@@ -126,8 +128,8 @@ class HostingPlan(models.Model):
 
     @property
     def price_eur(self):
-        return self.price_cents / 100
+        return Decimal(self.price_cents) / Decimal("100")
 
     @property
     def setup_fee_eur(self):
-        return self.setup_fee_cents / 100
+        return Decimal(self.setup_fee_cents) / Decimal("100")
