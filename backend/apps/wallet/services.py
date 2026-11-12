@@ -193,6 +193,20 @@ def debit_wallet(wallet_id, amount_cents: int, **kwargs) -> WalletTransaction:
     )
 
 
+def adjust_wallet_balance(wallet_id, amount_cents: int, **kwargs) -> WalletTransaction:
+    """Post a signed manual admin adjustment; positive credits, negative debits."""
+    if type(amount_cents) is not int or amount_cents == 0:
+        raise InvalidLedgerOperation(
+            "Adjustment must be a non-zero signed integer number of cents."
+        )
+    return post_transaction(
+        wallet_id,
+        transaction_type=WalletTransaction.Type.ADMIN_ADJUSTMENT,
+        amount_cents=amount_cents,
+        **kwargs,
+    )
+
+
 @transaction.atomic
 def place_hold(
     wallet_id,
