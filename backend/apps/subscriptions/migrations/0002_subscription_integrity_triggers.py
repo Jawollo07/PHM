@@ -16,6 +16,8 @@ SQLITE_STATEMENTS = (
       OR NEW.price_cents IS NOT OLD.price_cents
       OR NEW.billing_interval_unit IS NOT OLD.billing_interval_unit
       OR NEW.billing_interval_count IS NOT OLD.billing_interval_count
+      OR NEW.billing_anchor_day IS NOT OLD.billing_anchor_day
+      OR NEW.billing_anchor_month IS NOT OLD.billing_anchor_month
       OR NEW.created_at IS NOT OLD.created_at
       OR (OLD.cancelled_at IS NOT NULL AND NEW.cancelled_at IS NOT OLD.cancelled_at)
     BEGIN
@@ -50,6 +52,8 @@ POSTGRES_STATEMENTS = (
            OR NEW.price_cents IS DISTINCT FROM OLD.price_cents
            OR NEW.billing_interval_unit IS DISTINCT FROM OLD.billing_interval_unit
            OR NEW.billing_interval_count IS DISTINCT FROM OLD.billing_interval_count
+           OR NEW.billing_anchor_day IS DISTINCT FROM OLD.billing_anchor_day
+           OR NEW.billing_anchor_month IS DISTINCT FROM OLD.billing_anchor_month
            OR NEW.created_at IS DISTINCT FROM OLD.created_at
            OR (OLD.cancelled_at IS NOT NULL AND NEW.cancelled_at IS DISTINCT FROM OLD.cancelled_at) THEN
             RAISE EXCEPTION 'Subscription ownership and billing terms are immutable.';
