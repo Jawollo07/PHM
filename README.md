@@ -46,6 +46,10 @@ There are no business-account or customer-membership models. The account page re
 
 Contains administrator-managed hosting products and plans. Prices and setup fees are stored as integer EUR cents. Billing intervals are configurable (one-time, day, week, month or year), and resource limits are stored as structured JSON without assuming a specific hosting platform. Products and plans are not yet exposed through a customer-facing storefront.
 
+### `apps.orders`
+
+Contains wallet-funded order creation and the first order lifecycle. Placing a paid order reserves wallet funds through a hold; confirming payment captures the hold and writes a signed purchase transaction. Cancelling an unpaid order releases the reservation. Free plans can be ordered without creating a zero-value ledger entry. Order items preserve immutable product, plan, price, billing interval and resource snapshots. Orders are currently managed through read-only admin views; customer checkout and automated provisioning are still pending.
+
 ### `apps.wallet`
 
 Owns the single EUR wallet for each personal customer. The repository includes wallet, hold, signing-key, transaction and checkpoint models, idempotent transaction services, administrator-only manual adjustments, a read-only searchable ledger admin and signed checkpoint support. `verify_ledger` checks every wallet hash/signature chain and the latest checkpoint against the live ledger. `checkpoint_ledger` verifies the current state before appending a new signed checkpoint. Private signing keys are loaded from environment configuration and are not stored in the PHM database. SQLite and PostgreSQL triggers now reject direct UPDATE/DELETE operations on transactions and checkpoints. Externally retained checkpoints, production secret management and production deployment hardening are still outstanding.
@@ -53,7 +57,6 @@ Owns the single EUR wallet for each personal customer. The repository includes w
 ### Planned domain applications
 
 The following areas remain planned and are not yet complete:
-- `orders`: customer purchases;
 - `subscriptions`: recurring hosting contracts and renewals;
 - `invoices`: invoice creation and records;
 - `pelican`: synchronization and provisioning through the Pelican Panel API;
