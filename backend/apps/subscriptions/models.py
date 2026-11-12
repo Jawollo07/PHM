@@ -68,6 +68,8 @@ class Subscription(models.Model):
         choices=IntervalUnit.choices,
     )
     billing_interval_count = models.PositiveSmallIntegerField(default=1)
+    billing_anchor_day = models.PositiveSmallIntegerField(default=1)
+    billing_anchor_month = models.PositiveSmallIntegerField(default=1)
     current_period_start = models.DateTimeField()
     current_period_end = models.DateTimeField()
     next_billing_at = models.DateTimeField()
@@ -99,6 +101,14 @@ class Subscription(models.Model):
             models.CheckConstraint(
                 condition=Q(billing_interval_count__gte=1),
                 name="subscription_interval_positive",
+            ),
+            models.CheckConstraint(
+                condition=Q(billing_anchor_day__gte=1, billing_anchor_day__lte=31),
+                name="subscription_anchor_day_valid",
+            ),
+            models.CheckConstraint(
+                condition=Q(billing_anchor_month__gte=1, billing_anchor_month__lte=12),
+                name="subscription_anchor_month_valid",
             ),
             models.CheckConstraint(
                 condition=Q(current_period_end__gt=F("current_period_start")),
@@ -133,6 +143,8 @@ class Subscription(models.Model):
             "price_cents",
             "billing_interval_unit",
             "billing_interval_count",
+            "billing_anchor_day",
+            "billing_anchor_month",
             "created_at",
         )
         if any(getattr(original, field) != getattr(self, field) for field in immutable_fields):
