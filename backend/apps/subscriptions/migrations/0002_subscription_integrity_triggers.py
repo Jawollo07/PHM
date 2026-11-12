@@ -54,9 +54,17 @@ POSTGRES_STATEMENTS = (
            OR (OLD.cancelled_at IS NOT NULL AND NEW.cancelled_at IS DISTINCT FROM OLD.cancelled_at) THEN
             RAISE EXCEPTION 'Subscription ownership and billing terms are immutable.';
         END IF;
+        IF NEW.status IS DISTINCT FROM OLD.status
+           AND NOT (
+               (OLD.status = 'active' AND NEW.status IN ('past_due', 'suspended', 'cancelled', 'expired'))
+               OR (OLD.status = 'past_due' AND NEW.status IN ('active', 'suspended', 'cancelled', 'expired'))
+               OR (OLD.status = 'suspended' AND NEW.status IN ('active', 'cancelled', 'expired'))
+           ) THEN
+            RAISE EXCEPTION 'Invalid subscription state transition.';
+        END IF;
         RETURN NEW;
     END;
-    $$""",
+    $""",
     """CREATE TRIGGER subscriptions_guard_history
     BEFORE UPDATE OR DELETE ON subscriptions
     FOR EACH ROW EXECUTE FUNCTION phm_guard_subscription_history()""",
