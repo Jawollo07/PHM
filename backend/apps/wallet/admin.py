@@ -294,8 +294,6 @@ class AdminActorFilter(admin.SimpleListFilter):
     parameter_name = "admin_actor"
 
     def lookups(self, request, model_admin):
-        from django.contrib.auth import get_user_model
-
         actors = (
             WalletTransaction.objects.filter(
                 type=WalletTransaction.Type.ADMIN_ADJUSTMENT
@@ -339,13 +337,13 @@ class WalletTransactionAdmin(admin.ModelAdmin):
         AdminActorFilter,
     )
     search_fields = (
-        "id",
+        "=id",
         "entry_hash",
         "previous_hash",
         "idempotency_key",
         "reference",
         "description",
-        "wallet__id",
+        "=wallet__id",
         "wallet__customer__user__username",
         "wallet__customer__user__email",
     )
