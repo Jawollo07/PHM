@@ -119,6 +119,7 @@ class SubscriptionServiceTests(TestCase):
     def test_renewal_debits_wallet_and_extends_period_once(self):
         subscription = self.create_paid_subscription()
         subscription = set_auto_renew(subscription.pk, self.user.customer.pk, True)
+        self.wallet.refresh_from_db()
         wallet_before = self.wallet.balance_cents
         due_time = subscription.next_billing_at
         entry = renew_subscription(
@@ -247,6 +248,7 @@ class SubscriptionServiceTests(TestCase):
         subscription.next_billing_at = due
         subscription.save(update_fields=["current_period_end", "next_billing_at", "updated_at"])
 
+        self.wallet.refresh_from_db()
         balance_before = self.wallet.balance_cents
         with override_settings(
             WALLET_LEDGER_KEY_ID=self.key.key_id,
