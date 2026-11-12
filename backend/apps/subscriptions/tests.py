@@ -310,3 +310,41 @@ class SubscriptionServiceTests(TestCase):
         subscription.refresh_from_db()
         self.assertEqual(subscription.status, Subscription.Status.CANCELLED)
         self.assertIsNotNone(subscription.cancelled_at)
+
+    def test_monthly_billing_preserves_the_original_month_end_anchor(self):
+        start = timezone.make_aware(datetime(2026, 1, 31, 12, 0))
+        february = add_billing_interval(
+            start,
+            HostingPlan.IntervalUnit.MONTH,
+            1,
+            anchor_day=31,
+            anchor_month=1,
+        )
+        march = add_billing_interval(
+            february,
+            HostingPlan.IntervalUnit.MONTH,
+            1,
+            anchor_day=31,
+            anchor_month=1,
+        )
+        self.assertEqual((february.month, february.day), (2, 28))
+        self.assertEqual((march.month, march.day), (3, 31))
+
+    def test_leap_day_yearly_anchor_returns_to_february_29(self):
+        start = timezone.make_aware(datetime(2024, 2, 29, 12, 0))
+        next_year = add_billing_interval(
+            start,
+            HostingPlan.IntervalUnit.YEAR,
+            1,
+            anchor_day=29,
+            anchor_month=2,
+        )
+        leap_year = add_billing_interval(
+            next_year,
+            HostingPlan.IntervalUnit.YEAR,
+            3,
+            anchor_day=29,
+            anchor_month=2,
+        )
+        self.assertEqual((next_year.year, next_year.month, next_year.day), (2025, 2, 28))
+        self.assertEqual((leap_year.year, leap_year.month, leap_year.day), (2028, 2, 29))
