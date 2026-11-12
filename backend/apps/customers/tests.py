@@ -196,13 +196,13 @@ class AccountViewTests(TestCase):
         with override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend"):
             response = self.client.post(
                 "/account/",
-            {
-                "username": "testuser",
-                "email": "changed-address@example.com",
-                "phone_number": "",
-                "language": "de",
-            },
-        )
+                {
+                    "username": "testuser",
+                    "email": "changed-address@example.com",
+                    "phone_number": "",
+                    "language": "de",
+                },
+            )
 
         self.assertRedirects(response, "/account/")
         self.user.refresh_from_db()
