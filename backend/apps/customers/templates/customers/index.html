@@ -303,6 +303,7 @@
             <nav aria-label="Hauptnavigation">
                 <a class="nav-link" href="{% url 'catalog' %}">Hosting-Angebote</a>
                 <a class="nav-link" href="{% url 'orders' %}">Bestellungen</a>
+                <a class="nav-link" href="{% url 'subscriptions' %}">Abonnements</a>
                 <form method="post" action="{% url 'logout' %}">{% csrf_token %}<button class="nav-link" type="submit">Abmelden</button></form>
             </nav>
         </header>
