@@ -1,0 +1,11 @@
+<!doctype html>
+<html lang="de">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>PHM – E-Mail-Bestätigung</title></head>
+<body>
+    <main>
+        <h1>{% if success %}E-Mail bestätigt{% else %}Bestätigung fehlgeschlagen{% endif %}</h1>
+        <p role="{% if success %}status{% else %}alert{% endif %}">{{ message }}</p>
+        <p><a href="{% url 'auth' %}">Zur Anmeldung</a></p>
+    </main>
+</body>
+</html>
