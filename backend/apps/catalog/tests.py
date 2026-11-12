@@ -4,6 +4,7 @@ from django.contrib.contenttypes.models import ContentType
 from django.db import IntegrityError, transaction
 from django.test import TestCase
 from django.urls import reverse
+from decimal import Decimal
 
 from apps.catalog.models import HostingPlan, HostingProduct
 
@@ -31,7 +32,7 @@ class HostingCatalogModelTests(TestCase):
         )
         self.assertEqual(plan.price_cents, 1299)
         self.assertEqual(plan.setup_fee_cents, 250)
-        self.assertEqual(plan.price_eur, 12.99)
+        self.assertEqual(plan.price_eur, Decimal("12.99"))
         self.assertEqual(plan.billing_interval_count, 3)
 
     def test_free_plan_is_valid_and_does_not_use_negative_money(self):
