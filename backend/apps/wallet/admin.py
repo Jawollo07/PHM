@@ -348,8 +348,6 @@ class WalletTransactionAdmin(admin.ModelAdmin):
         "wallet__id",
         "wallet__customer__user__username",
         "wallet__customer__user__email",
-        "metadata__admin_username",
-        "metadata__admin_user_id",
     )
     list_select_related = ("wallet__customer__user", "signing_key")
     readonly_fields = (
