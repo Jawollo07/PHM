@@ -24,7 +24,7 @@ class FakeProvisioningClient:
         return self.created
 
     def get_server(self, panel_server_id):
-        return self.detail
+        return self.detail or self.created or self.remote
 
 
 class PelicanServerProvisioningTests(TestCase):
