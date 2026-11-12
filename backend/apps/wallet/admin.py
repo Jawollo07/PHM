@@ -296,19 +296,19 @@ class AdminActorFilter(admin.SimpleListFilter):
     def lookups(self, request, model_admin):
         from django.contrib.auth import get_user_model
 
-        actor_ids = (
+        actors = (
             WalletTransaction.objects.filter(
                 type=WalletTransaction.Type.ADMIN_ADJUSTMENT
             )
             .exclude(metadata__admin_user_id__isnull=True)
-            .values_list("metadata__admin_user_id", flat=True)
+            .values_list("metadata__admin_user_id", "metadata__admin_username")
             .distinct()
+            .order_by("metadata__admin_username")
         )
-        User = get_user_model()
-        actors = User.objects.filter(pk__in=actor_ids).order_by("username")
         return tuple(
-            (str(actor.pk), f"{actor.get_username()} ({actor.email})")
-            for actor in actors
+            (str(actor_id), f"{username or 'Unbekannt'} ({actor_id})")
+            for actor_id, username in actors
+            if actor_id
         )
 
     def queryset(self, request, queryset):
@@ -348,7 +348,8 @@ class WalletTransactionAdmin(admin.ModelAdmin):
         "wallet__id",
         "wallet__customer__user__username",
         "wallet__customer__user__email",
-        "metadata",
+        "metadata__admin_username",
+        "metadata__admin_user_id",
     )
     list_select_related = ("wallet__customer__user", "signing_key")
     readonly_fields = (
@@ -453,14 +454,7 @@ class WalletTransactionAdmin(admin.ModelAdmin):
         if not actor_id:
             return "—"
         stored_name = obj.metadata.get("admin_username", "Unbekannt")
-        from django.contrib.auth import get_user_model
-
-        actor = get_user_model().objects.filter(pk=actor_id).only(
-            "username", "email"
-        ).first()
-        if actor:
-            return f"{actor.get_username()} ({actor.email})"
-        return f"{stored_name} (Benutzerkonto nicht mehr vorhanden)"
+        return f"{stored_name} (ID: {actor_id})"
 
     @admin.display(description="Administrator-ID")
     def admin_user_id(self, obj):
