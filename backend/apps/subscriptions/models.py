@@ -23,6 +23,12 @@ class SubscriptionManager(models.Manager.from_queryset(SubscriptionQuerySet)):
 class Subscription(models.Model):
     """A private customer's recurring hosting contract, funded by the PHM wallet."""
 
+    class IntervalUnit(models.TextChoices):
+        DAY = "day", "Tag(e)"
+        WEEK = "week", "Woche(n)"
+        MONTH = "month", "Monat(e)"
+        YEAR = "year", "Jahr(e)"
+
     class Status(models.TextChoices):
         ACTIVE = "active", "Aktiv"
         PAST_DUE = "past_due", "Guthaben ausstehend"
@@ -57,7 +63,10 @@ class Subscription(models.Model):
     status = models.CharField(max_length=16, choices=Status.choices, default=Status.ACTIVE)
     currency = models.CharField(max_length=3, default="EUR", editable=False)
     price_cents = models.BigIntegerField(validators=[MinValueValidator(0)])
-    billing_interval_unit = models.CharField(max_length=10)
+    billing_interval_unit = models.CharField(
+        max_length=10,
+        choices=IntervalUnit.choices,
+    )
     billing_interval_count = models.PositiveSmallIntegerField(default=1)
     current_period_start = models.DateTimeField()
     current_period_end = models.DateTimeField()
