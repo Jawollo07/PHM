@@ -16,6 +16,7 @@ class LoginTests(TestCase):
             username='testuser',
             email='test@example.com',
             password='correct-password',
+            email_verified=True,
         )
 
     def test_login_with_valid_credentials_creates_session(self):
@@ -122,3 +123,120 @@ class UserCliTests(TestCase):
         self.assertEqual(exit_code, 2)
         self.assertFalse(User.objects.filter(username='cli-user').exists())
         self.assertIn('stimmen nicht überein', errors.getvalue())
+
+
+class RegistrationAndEmailVerificationTests(TestCase):
+    def setUp(self):
+        from django.test import override_settings
+
+        self.email_backend = override_settings(
+            EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend"
+        )
+        self.email_backend.enable()
+
+    def tearDown(self):
+        self.email_backend.disable()
+
+    def test_registration_creates_personal_customer_wallet_and_hashed_token(self):
+        import hashlib
+        import re
+
+        from django.core import mail
+        from django.urls import reverse
+        from apps.auth.models import EmailVerification
+
+        response = self.client.post(reverse("register"), {
+            "username": "new-private-customer",
+            "email": "new-private@example.com",
+            "password1": "Strong-Passphrase-2026!x",
+            "password2": "Strong-Passphrase-2026!x",
+        })
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTemplateUsed(response, "auth/registration_sent.html")
+        user = User.objects.get(username="new-private-customer")
+        self.assertFalse(user.email_verified)
+        self.assertTrue(hasattr(user, "customer"))
+        self.assertTrue(Wallet.objects.filter(customer=user.customer).exists())
+        self.assertEqual(len(mail.outbox), 1)
+
+        token = re.search(r"/auth/verify/([^/]+)", mail.outbox[0].body).group(1)
+        verification = EmailVerification.objects.get(user=user)
+        self.assertEqual(
+            verification.token_hash,
+            hashlib.sha256(token.encode("utf-8")).hexdigest(),
+        )
+        self.assertNotEqual(verification.token_hash, token)
+
+    def test_email_verification_enables_login_and_is_one_time(self):
+        import re
+
+        from django.core import mail
+        from django.urls import reverse
+
+        self.client.post(reverse("register"), {
+            "username": "verify-me",
+            "email": "verify-me@example.com",
+            "password1": "Strong-Passphrase-2026!x",
+            "password2": "Strong-Passphrase-2026!x",
+        })
+        token = re.search(r"/auth/verify/([^/]+)", mail.outbox[0].body).group(1)
+
+        response = self.client.get(reverse("verify_email", kwargs={"token": token}))
+        self.assertEqual(response.status_code, 200)
+        user = User.objects.get(username="verify-me")
+        user.refresh_from_db()
+        self.assertTrue(user.email_verified)
+        self.assertIsNotNone(user.email_verified_at)
+
+        second_response = self.client.get(
+            reverse("verify_email", kwargs={"token": token})
+        )
+        self.assertEqual(second_response.status_code, 400)
+
+        login_response = self.client.post(reverse("login"), {
+            "username": "verify-me",
+            "password": "Strong-Passphrase-2026!x",
+        })
+        self.assertRedirects(login_response, reverse("account"))
+
+    def test_unverified_user_cannot_log_in(self):
+        from django.urls import reverse
+
+        user = User.objects.create_user(
+            username="pending-verification",
+            email="pending@example.com",
+            password="Strong-Passphrase-2026!x",
+        )
+        response = self.client.post(reverse("login"), {
+            "username": user.username,
+            "password": "Strong-Passphrase-2026!x",
+        })
+        self.assertEqual(response.status_code, 400)
+        self.assertContains(
+            response,
+            "Bitte bestätige zuerst deine E-Mail-Adresse.",
+            status_code=400,
+        )
+        self.assertNotIn("_auth_user_id", self.client.session)
+
+    def test_registration_rejects_duplicate_email_case_insensitively(self):
+        from django.urls import reverse
+
+        User.objects.create_user(
+            username="existing-customer",
+            email="already-used@example.com",
+            password="Strong-Passphrase-2026!x",
+        )
+        response = self.client.post(reverse("register"), {
+            "username": "different-user",
+            "email": "ALREADY-USED@example.com",
+            "password1": "Strong-Passphrase-2026!x",
+            "password2": "Strong-Passphrase-2026!x",
+        })
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(
+            response,
+            "Diese E-Mail-Adresse wird bereits verwendet.",
+        )
+        self.assertFalse(User.objects.filter(username="different-user").exists())
