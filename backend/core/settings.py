@@ -41,6 +41,7 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'apps.auth',
     'apps.customers',
+    'apps.catalog.apps.CatalogConfig',
     'apps.wallet.apps.WalletConfig',
 ]
 
