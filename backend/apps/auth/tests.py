@@ -240,3 +240,42 @@ class RegistrationAndEmailVerificationTests(TestCase):
             "Diese E-Mail-Adresse wird bereits verwendet.",
         )
         self.assertFalse(User.objects.filter(username="different-user").exists())
+
+    def test_password_reset_sends_link_only_to_verified_accounts(self):
+        from django.core import mail
+        from django.urls import reverse
+
+        verified = User.objects.create_user(
+            username="reset-verified",
+            email="reset-verified@example.com",
+            password="Old-Strong-Passphrase-2026!",
+            email_verified=True,
+        )
+        User.objects.create_user(
+            username="reset-unverified",
+            email="reset-unverified@example.com",
+            password="Old-Strong-Passphrase-2026!",
+            email_verified=False,
+        )
+
+        response = self.client.post(reverse("password_reset"), {
+            "email": verified.email,
+        })
+        self.assertRedirects(response, reverse("password_reset_done"))
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn("password-reset/confirm/", mail.outbox[0].body)
+
+        self.client.post(reverse("password_reset"), {
+            "email": "reset-unverified@example.com",
+        })
+        self.assertEqual(len(mail.outbox), 1)
+
+    def test_password_reset_page_does_not_reveal_unknown_email_addresses(self):
+        from django.urls import reverse
+
+        response = self.client.post(reverse("password_reset"), {
+            "email": "not-registered@example.com",
+        })
+        self.assertRedirects(response, reverse("password_reset_done"))
+        done = self.client.get(reverse("password_reset_done"))
+        self.assertContains(done, "Wenn ein bestätigtes Konto zu dieser Adresse existiert")
