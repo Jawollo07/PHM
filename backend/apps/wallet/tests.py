@@ -557,7 +557,7 @@ class ManualWalletAdjustmentAdminTests(TestCase):
         )
         entry = adjust_wallet_balance(
             self.wallet.pk,
-            -1,
+            1,
             description="Ledger detail fixture",
             idempotency_key="ledger-detail-search-1",
             reference="LEDGER-DETAIL-42",
@@ -580,7 +580,7 @@ class ManualWalletAdjustmentAdminTests(TestCase):
         self.assertContains(response, entry.entry_hash)
         self.assertContains(response, b"detail-signature".hex())
         self.assertContains(response, "wallet-admin")
-        self.assertNotContains(response, 'name="_save"')
+        self.assertFalse(response.context["adminform"].form.fields)
 
     def test_manual_adjustment_admin_route_requires_specific_permission(self):
         from django.urls import reverse
