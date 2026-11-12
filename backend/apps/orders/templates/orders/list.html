@@ -7,6 +7,6 @@
 <article class="order"><p class="muted">{{ order.created_at|date:"d.m.Y H:i" }} · {{ order.status }}</p>
 <h2><a href="{% url 'order_detail' order.id %}">Bestellung {{ order.id }}</a></h2>
 {% for item in order.items.all %}<p>{{ item.product_name }} – {{ item.plan_name }} × {{ item.quantity }}</p>{% endfor %}
-<p class="amount">{{ order.total_cents|floatformat:0 }} Cent · {{ order.currency }}</p></article>
+<p class="amount">{{ order.total_eur|floatformat:2 }} EUR</p></article>
 {% empty %}<p>Du hast noch keine Bestellungen.</p>{% endfor %}
 </main></body></html>
