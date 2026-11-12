@@ -25,7 +25,7 @@ class SubscriptionNotRenewable(SubscriptionError):
     pass
 
 
-def add_billing_interval(value, unit, count):
+def add_billing_interval(value, unit, count, *, anchor_day=None, anchor_month=None):
     """Add a calendar-aware interval without overflowing month-end dates."""
     if count < 1:
         raise ValueError("Billing interval count must be positive.")
@@ -37,12 +37,13 @@ def add_billing_interval(value, unit, count):
         month_index = value.year * 12 + value.month - 1 + count
         year, month_zero = divmod(month_index, 12)
         month = month_zero + 1
-        day = min(value.day, calendar.monthrange(year, month)[1])
+        day = min(anchor_day or value.day, calendar.monthrange(year, month)[1])
         return value.replace(year=year, month=month, day=day)
     if unit == HostingPlan.IntervalUnit.YEAR:
         year = value.year + count
-        day = min(value.day, calendar.monthrange(year, value.month)[1])
-        return value.replace(year=year, day=day)
+        month = anchor_month or value.month
+        day = min(anchor_day or value.day, calendar.monthrange(year, month)[1])
+        return value.replace(year=year, month=month, day=day)
     raise ValueError("One-time products do not have subscription billing intervals.")
 
 
@@ -78,6 +79,8 @@ def create_subscription_for_order_item(order_item_id):
         price_cents=item.unit_price_cents,
         billing_interval_unit=item.billing_interval_unit,
         billing_interval_count=item.billing_interval_count,
+        billing_anchor_day=start.day,
+        billing_anchor_month=start.month,
         current_period_start=start,
         current_period_end=end,
         next_billing_at=end,
@@ -189,6 +192,8 @@ def renew_subscription(
         period_start,
         subscription.billing_interval_unit,
         subscription.billing_interval_count,
+        anchor_day=subscription.billing_anchor_day,
+        anchor_month=subscription.billing_anchor_month,
     )
     subscription.status = Subscription.Status.ACTIVE
     subscription.current_period_start = period_start
