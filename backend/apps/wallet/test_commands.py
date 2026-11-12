@@ -77,7 +77,6 @@ class VerifyLedgerCommandTests(TestCase):
     def test_checkpoint_command_refuses_to_anchor_changed_wallet_balance(self):
         import base64
 
-        from django.db import connection
         from django.test import override_settings
 
         raw_private_key = self.private_key.private_bytes(
@@ -89,11 +88,11 @@ class VerifyLedgerCommandTests(TestCase):
             signing_key_id=self.key.pk,
             signer=self.private_key.sign,
         )
-        with connection.cursor() as cursor:
-            cursor.execute(
-                "UPDATE wallets SET balance_cents = 1 WHERE id = %s",
-                [str(self.user.customer.wallet.pk)],
-            )
+        User.objects.create_user(
+            username="new-wallet-after-checkpoint",
+            email="new-wallet-after-checkpoint@example.com",
+            password="secure-test-password",
+        )
 
         with override_settings(
             WALLET_LEDGER_KEY_ID=self.key.key_id,
