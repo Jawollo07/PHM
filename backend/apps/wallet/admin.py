@@ -14,7 +14,7 @@ from django.utils.html import format_html
 from django.utils.module_loading import import_string
 
 from .models import LedgerCheckpoint, LedgerSigningKey, Wallet, WalletHold, WalletTransaction
-from .services import InsufficientFunds, InvalidLedgerOperation, credit_wallet, debit_wallet
+from .services import InsufficientFunds, InvalidLedgerOperation, adjust_wallet_balance
 
 
 class ManualWalletAdjustmentForm(forms.Form):
@@ -118,19 +118,16 @@ class WalletAdmin(admin.ModelAdmin):
                 if not common["description"]:
                     form.add_error("reason", "Eine Begründung ist erforderlich.")
                 else:
-                    if form.cleaned_data["direction"] == "credit":
-                        entry = credit_wallet(
-                            form.cleaned_data["wallet"].pk,
-                            amount_cents,
-                            transaction_type=WalletTransaction.Type.ADMIN_ADJUSTMENT,
-                            **common,
-                        )
-                    else:
-                        entry = debit_wallet(
-                            form.cleaned_data["wallet"].pk,
-                            amount_cents,
-                            **common,
-                        )
+                    signed_amount = (
+                    amount_cents
+                    if form.cleaned_data["direction"] == "credit"
+                    else -amount_cents
+                )
+                entry = adjust_wallet_balance(
+                    form.cleaned_data["wallet"].pk,
+                    signed_amount,
+                    **common,
+                )
                     messages.success(
                         request,
                         f"Buchung #{entry.sequence_number} gespeichert. "
@@ -143,6 +140,12 @@ class WalletAdmin(admin.ModelAdmin):
                 form.add_error(None, str(exc))
             except ImproperlyConfigured as exc:
                 form.add_error(None, str(exc))
+            except Exception:
+                form.add_error(
+                    None,
+                    "Die Buchung konnte nicht sicher abgeschlossen werden. "
+                    "Es wurde keine erfolgreiche Buchung bestätigt.",
+                )
 
         context = {
             **self.admin_site.each_context(request),
@@ -153,6 +156,13 @@ class WalletAdmin(admin.ModelAdmin):
             "has_permission": True,
         }
         return render(request, "admin/wallet/wallet/manual_adjustment.html", context)
+
+    def changelist_view(self, request, extra_context=None):
+        extra_context = extra_context or {}
+        extra_context["can_adjust_wallet"] = request.user.has_perm(
+            "wallet.adjust_wallet_balance"
+        )
+        return super().changelist_view(request, extra_context=extra_context)
 
     def has_view_permission(self, request, obj=None):
         return request.user.is_active and request.user.is_staff
