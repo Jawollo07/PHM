@@ -42,6 +42,21 @@ class ImmutableManager(models.Manager.from_queryset(ImmutableQuerySet)):
 
 
 class WalletQuerySet(models.QuerySet):
+    def update(self, **kwargs):
+        if "balance_cents" in kwargs:
+            raise TypeError("Wallet balances may only be changed by the ledger service.")
+        return super().update(**kwargs)
+
+    def bulk_update(self, objs, fields, **kwargs):
+        if "balance_cents" in fields:
+            raise TypeError("Wallet balances may only be changed by the ledger service.")
+        return super().bulk_update(objs, fields, **kwargs)
+
+    def apply_ledger_balance(self, balance_cents, updated_at):
+        if type(balance_cents) is not int or balance_cents < 0:
+            raise ValueError("Ledger balance must be a non-negative integer number of cents.")
+        return super().update(balance_cents=balance_cents, updated_at=updated_at)
+
     def delete(self):
         raise TypeError("Wallets cannot be deleted; archive the customer instead.")
 
@@ -105,6 +120,18 @@ class Wallet(models.Model):
                 name="wallet_currency_eur",
             ),
         ]
+
+    def save(self, *args, **kwargs):
+        if self._state.adding:
+            if self.balance_cents != 0:
+                raise TypeError("New wallets must start with a zero balance.")
+        else:
+            persisted_balance = type(self).objects.filter(pk=self.pk).values_list(
+                "balance_cents", flat=True
+            ).first()
+            if persisted_balance is not None and persisted_balance != self.balance_cents:
+                raise TypeError("Wallet balances may only be changed by the ledger service.")
+        return super().save(*args, **kwargs)
 
     @property
     def reserved_balance_cents(self):
