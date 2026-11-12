@@ -44,7 +44,7 @@ There are no business-account or customer-membership models. The account page re
 
 ### `apps.wallet`
 
-Owns the single EUR wallet for each personal customer. The repository includes wallet, hold, signing-key, transaction and checkpoint models, idempotent transaction services, administrator-only manual adjustments, a read-only searchable ledger admin and signed checkpoint support. `verify_ledger` checks every wallet hash/signature chain and the latest checkpoint against the live ledger. `checkpoint_ledger` verifies the current state before appending a new signed checkpoint. Private signing keys are loaded from environment configuration and are not stored in the PHM database. Externally retained checkpoints and database-level append-only enforcement are still outstanding.
+Owns the single EUR wallet for each personal customer. The repository includes wallet, hold, signing-key, transaction and checkpoint models, idempotent transaction services, administrator-only manual adjustments, a read-only searchable ledger admin and signed checkpoint support. `verify_ledger` checks every wallet hash/signature chain and the latest checkpoint against the live ledger. `checkpoint_ledger` verifies the current state before appending a new signed checkpoint. Private signing keys are loaded from environment configuration and are not stored in the PHM database. SQLite and PostgreSQL triggers now reject direct UPDATE/DELETE operations on transactions and checkpoints. Externally retained checkpoints, production secret management and production deployment hardening are still outstanding.
 
 ### Planned domain applications
 
@@ -111,6 +111,8 @@ python manage.py check
 python manage.py showmigrations
 python manage.py migrate
 python manage.py test
+python manage.py checkpoint_ledger
+python manage.py verify_ledger
 ```
 
 Start the development server:
@@ -136,7 +138,7 @@ Before deploying PHM:
 - add tests for authorization, customer isolation, wallet concurrency and payment idempotency;
 - establish encrypted backups and a tested restore procedure.
 
-Never commit passwords, private signing keys, API tokens, production database credentials or other secrets. Configure `WALLET_LEDGER_KEY_ID`, `WALLET_LEDGER_SIGNER` and `WALLET_LEDGER_PRIVATE_KEY_B64` before using ledger signing or checkpoint commands.
+Never commit passwords, private signing keys, API tokens, production database credentials or other secrets. Configure `WALLET_LEDGER_KEY_ID`, `WALLET_LEDGER_SIGNER` and `WALLET_LEDGER_PRIVATE_KEY_B64` before using ledger signing or checkpoint commands. Run `checkpoint_ledger` once to create the first signed anchor, then schedule `verify_ledger` regularly. `checkpoint_ledger` verifies the current state before appending a new checkpoint.
 
 ## Development status
 
