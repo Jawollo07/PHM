@@ -117,9 +117,7 @@ class WalletAdmin(admin.ModelAdmin):
 
     def get_list_display(self, request):
         columns = list(super().get_list_display(request))
-        if request.user.has_perm("wallet.adjust_wallet_balance"):
-            columns.insert(columns.index("created_at"), "manual_adjustment_link")
-        else:
+        if not request.user.has_perm("wallet.adjust_wallet_balance"):
             columns.remove("manual_adjustment_link")
         return tuple(columns)
 
