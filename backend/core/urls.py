@@ -5,6 +5,7 @@ from django.urls import path
 from apps.auth.forms import VerifiedPasswordResetForm
 from apps.auth.views import auth_view, login, log_out, register, site, verify_email
 from apps.customers.views import account_view
+from apps.orders.views import catalog_view, order_detail_view, orders_view, purchase_plan_view
 
 urlpatterns = [
     path("admin/", admin.site.urls),
@@ -48,4 +49,8 @@ urlpatterns = [
     ),
     path("auth/login/test/", site, name="login_test"),
     path("account/", account_view, name="account"),
+    path("catalog/", catalog_view, name="catalog"),
+    path("catalog/plans/<int:plan_id>/purchase/", purchase_plan_view, name="purchase_plan"),
+    path("orders/", orders_view, name="orders"),
+    path("orders/<uuid:order_id>/", order_detail_view, name="order_detail"),
 ]
