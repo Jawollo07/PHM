@@ -1,0 +1,11 @@
+[Unit]
+Description=Process opted-in PHM subscription renewals daily
+
+[Timer]
+OnCalendar=*-*-* 04:15:00 Europe/Berlin
+Persistent=true
+AccuracySec=1min
+Unit=phm-subscription-renewals.service
+
+[Install]
+WantedBy=timers.target
