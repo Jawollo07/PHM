@@ -1,0 +1,11 @@
+[Unit]
+Description=Run PHM ledger integrity verification every day
+
+[Timer]
+OnCalendar=*-*-* 04:00:00 Europe/Berlin
+Persistent=true
+AccuracySec=1min
+Unit=phm-ledger-integrity.service
+
+[Install]
+WantedBy=timers.target
