@@ -40,6 +40,11 @@ def catalog_view(request):
         .order_by("sort_order", "name")
         .prefetch_related(Prefetch("plans", queryset=plans, to_attr="available_plans"))
     )
+    products = list(products)
+    for product in products:
+        for plan in product.available_plans:
+            plan.checkout_idempotency_key = uuid.uuid4()
+
     wallet = request.user.customer.wallet
     return render(
         request,
@@ -48,7 +53,7 @@ def catalog_view(request):
             "products": products,
             "wallet_balance": _eur(wallet.balance_cents),
             "wallet_available": _eur(wallet.available_balance_cents),
-            "new_idempotency_key": uuid.uuid4(),
+
         },
     )
 
