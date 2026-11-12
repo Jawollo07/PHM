@@ -52,3 +52,16 @@ def sync_pelican_account(account_id, *, client=None):
         "panel_user_id", "panel_email", "status", "linked_at", "last_error_code", "updated_at"
     ])
     return account
+
+
+@transaction.atomic
+def sync_pelican_password(user, raw_password, *, client=None):
+    """Update Pelican first; caller may save the PHM password only on success."""
+    account = (PelicanAccount.objects.select_for_update()
+               .filter(customer__user=user).first())
+    if account is None or account.status != PelicanAccount.Status.LINKED:
+        raise PelicanAPIError("pelican_account_not_linked")
+    if not user.email_verified:
+        raise PelicanAPIError("email_not_verified")
+    client = client or PelicanClient()
+    client.update_user_password(account.panel_user_id, raw_password)
