@@ -1,0 +1,27 @@
+{% extends "admin/base_site.html" %}
+{% load i18n admin_urls %}
+
+{% block content %}
+  <p>Manuelle Gutschriften und Belastungen werden als unveränderliche Ledger-Buchungen gespeichert. Jede Änderung benötigt eine Begründung und wird dem angemeldeten Administrator zugeordnet.</p>
+  <p><strong>Wichtig:</strong> Es wird niemals direkt ein Kontostand überschrieben.</p>
+  <form method="post" novalidate>
+    {% csrf_token %}
+    {{ form.non_field_errors }}
+    <fieldset class="module aligned">
+      {% for field in form %}
+        <div class="form-row">
+          {{ field.errors }}
+          <div>
+            {{ field.label_tag }}
+            {{ field }}
+            {% if field.help_text %}<div class="help">{{ field.help_text }}</div>{% endif %}
+          </div>
+        </div>
+      {% endfor %}
+    </fieldset>
+    <div class="submit-row">
+      <input type="submit" value="Buchung verbindlich speichern" class="default">
+      <a href="{% url 'admin:wallet_wallet_changelist' %}">Abbrechen</a>
+    </div>
+  </form>
+{% endblock %}
