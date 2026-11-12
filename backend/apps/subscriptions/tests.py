@@ -275,3 +275,20 @@ class SubscriptionServiceTests(TestCase):
         call_command("process_subscription_renewals")
         subscription.refresh_from_db()
         self.assertEqual(subscription.status, Subscription.Status.EXPIRED)
+
+    def test_database_protects_subscription_billing_terms_and_history(self):
+        from django.db import DatabaseError, connection, transaction
+
+        subscription = self.create_paid_subscription()
+        with self.assertRaises(DatabaseError), transaction.atomic():
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "UPDATE subscriptions SET price_cents = 1 WHERE id = %s",
+                    [str(subscription.pk)],
+                )
+        with self.assertRaises(DatabaseError), transaction.atomic():
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "DELETE FROM subscriptions WHERE id = %s",
+                    [str(subscription.pk)],
+                )
