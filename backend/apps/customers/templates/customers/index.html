@@ -318,6 +318,11 @@
             <div>
                 <p class="profile-name">{{ user_details.username }}</p>
                 <p class="profile-email">{{ user_details.email }}</p>
+                {% if user_details.email_verified %}
+                    <p class="state">E-Mail bestätigt</p>
+                {% else %}
+                    <p class="state off">E-Mail noch nicht bestätigt</p>
+                {% endif %}
             </div>
         </section>
 
