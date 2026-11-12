@@ -214,10 +214,12 @@ def sync_pelican_server(server_record_id, *, client=None):
                 _remote_id, external_id = _panel_attributes(remote)
                 if external_id != record.external_id:
                     raise PelicanAPIError("server_identity_mismatch")
-            if record.panel_server_id and record.panel_server_id != remote.get("id"):
+            remote_id, _external_id = _panel_attributes(remote)
+            if record.panel_server_id and record.panel_server_id != remote_id:
                 raise PelicanAPIError("server_link_conflict")
-            if record.panel_server_id:
-                remote = client.get_server(record.panel_server_id)
+            # Always fetch the detail representation: list/create responses may omit
+            # the installation state needed to distinguish queued from completed installs.
+            remote = client.get_server(remote_id)
             return _apply_remote_state(record, remote)
         except PelicanAPIError as exc:
             record.status = PelicanServer.Status.FAILED
