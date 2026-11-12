@@ -322,6 +322,20 @@ class LedgerCheckpointTests(TestCase):
             )
         )
 
+        from django.db import DatabaseError, connection
+        with self.assertRaises(DatabaseError), transaction.atomic():
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "UPDATE ledger_checkpoints SET transaction_count = 99 WHERE id = %s",
+                    [str(checkpoint.pk)],
+                )
+        with self.assertRaises(DatabaseError), transaction.atomic():
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "DELETE FROM ledger_checkpoints WHERE id = %s",
+                    [str(checkpoint.pk)],
+                )
+
     def test_checkpoint_chain_links_consecutive_snapshots(self):
         from apps.wallet.checkpoints import (
             create_ledger_checkpoint,
