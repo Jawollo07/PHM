@@ -112,6 +112,9 @@ def create_ledger_checkpoint(*, signing_key_id, signer: Callable[[bytes], bytes]
     # Lock the key registry in a stable order so concurrent checkpoint creators
     # serialize even when they request different active keys.
     list(LedgerSigningKey.objects.select_for_update().order_by("pk").values_list("pk", flat=True))
+    # Wallet services lock the wallet row before changing its ledger or balance.
+    # Locking all existing wallets gives this snapshot a stable financial view.
+    list(Wallet.objects.select_for_update().order_by("pk").values_list("pk", flat=True))
     signing_key = LedgerSigningKey.objects.get(pk=signing_key_id)
     if signing_key.status != LedgerSigningKey.Status.ACTIVE:
         raise ValueError("The checkpoint signing key is not active.")
