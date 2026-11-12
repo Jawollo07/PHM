@@ -1,0 +1,12 @@
+<!doctype html>
+<html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>PHM – Meine Bestellungen</title>
+<style>body{margin:0;padding:2rem 1rem;background:#f3f6fb;color:#172033;font-family:system-ui,sans-serif}main{max-width:900px;margin:auto}.order{background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:1rem;margin:1rem 0}.muted{color:#64748b;font-size:.9rem}.amount{font-weight:800}</style></head>
+<body><main><p><a href="{% url 'catalog' %}">← Zum Katalog</a></p><h1>Meine Bestellungen</h1>
+{% for message in messages %}<p role="status">{{ message }}</p>{% endfor %}
+{% for order in orders %}
+<article class="order"><p class="muted">{{ order.created_at|date:"d.m.Y H:i" }} · {{ order.status }}</p>
+<h2><a href="{% url 'order_detail' order.id %}">Bestellung {{ order.id }}</a></h2>
+{% for item in order.items.all %}<p>{{ item.product_name }} – {{ item.plan_name }} × {{ item.quantity }}</p>{% endfor %}
+<p class="amount">{{ order.total_cents|floatformat:0 }} Cent · {{ order.currency }}</p></article>
+{% empty %}<p>Du hast noch keine Bestellungen.</p>{% endfor %}
+</main></body></html>
