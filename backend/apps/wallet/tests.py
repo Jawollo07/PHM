@@ -69,6 +69,8 @@ class WalletModelTests(TestCase):
                 )
 
     def test_transaction_cannot_be_updated_or_deleted(self):
+        from django.db import DatabaseError, connection
+
         key = LedgerSigningKey.objects.create(
             key_id="test-key",
             label="Test key",
