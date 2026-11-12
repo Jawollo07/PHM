@@ -126,7 +126,7 @@ class Subscription(models.Model):
             ),
             models.Index(
                 fields=["customer", "status"],
-                name="subscription_customer_status_idx",
+                name="sub_customer_status_idx",
             ),
         ]
 
