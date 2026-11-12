@@ -1,4 +1,5 @@
 import uuid
+from decimal import Decimal
 
 from django.core.validators import MinValueValidator
 from django.db import models
@@ -166,6 +167,10 @@ class Order(models.Model):
     def delete(self, *args, **kwargs):
         raise TypeError("Orders cannot be deleted; preserve the order history.")
 
+    @property
+    def total_eur(self):
+        return Decimal(self.total_cents) / Decimal("100")
+
     def __str__(self):
         return f"Order {self.pk} ({self.status})"
 
@@ -227,6 +232,18 @@ class OrderItem(models.Model):
 
     def delete(self, *args, **kwargs):
         raise TypeError("Order item snapshots cannot be deleted.")
+
+    @property
+    def unit_price_eur(self):
+        return Decimal(self.unit_price_cents) / Decimal("100")
+
+    @property
+    def setup_fee_eur(self):
+        return Decimal(self.setup_fee_cents) / Decimal("100")
+
+    @property
+    def line_total_eur(self):
+        return Decimal(self.line_total_cents) / Decimal("100")
 
     def __str__(self):
         return f"{self.product_name} – {self.plan_name} × {self.quantity}"
