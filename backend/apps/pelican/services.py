@@ -165,8 +165,14 @@ def _apply_remote_state(record, remote):
         order.status = Order.Status.PROVISIONING
         order.save(update_fields=["status", "updated_at"])
     if record.status == PelicanServer.Status.INSTALLED and order.status == Order.Status.PROVISIONING:
-        order.status = Order.Status.ACTIVE
-        order.save(update_fields=["status", "updated_at"])
+        total_items = order.items.count()
+        installed_items = PelicanServer.objects.filter(
+            order_item__order=order,
+            status=PelicanServer.Status.INSTALLED,
+        ).count()
+        if total_items and installed_items == total_items:
+            order.status = Order.Status.ACTIVE
+            order.save(update_fields=["status", "updated_at"])
     return record
 
 
