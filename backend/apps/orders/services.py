@@ -28,6 +28,13 @@ class OrderNotCancellable(OrderError):
     pass
 
 
+def _ensure_order_subscriptions(order):
+    from apps.subscriptions.services import create_subscription_for_order_item
+
+    for item in order.items.all():
+        create_subscription_for_order_item(item.pk)
+
+
 @transaction.atomic
 def place_order(
     customer_id,
@@ -111,6 +118,7 @@ def confirm_order_payment(order_id, *, signing_key_id, signer) -> Order:
     """Capture the reserved wallet amount and append its signed purchase entry."""
     order = Order.objects.select_for_update().select_related("wallet_hold").get(pk=order_id)
     if order.status == Order.Status.PAID:
+        _ensure_order_subscriptions(order)
         return order
     if order.status != Order.Status.PENDING_PAYMENT or order.wallet_hold_id is None:
         raise OrderNotPayable("This order is not awaiting wallet payment.")
@@ -129,6 +137,7 @@ def confirm_order_payment(order_id, *, signing_key_id, signer) -> Order:
     order.paid_transaction = entry
     order.paid_at = timezone.now()
     order.save(update_fields=["status", "paid_transaction", "paid_at", "updated_at"])
+    _ensure_order_subscriptions(order)
     return order
 
 
