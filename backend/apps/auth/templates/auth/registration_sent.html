@@ -1,0 +1,12 @@
+<!doctype html>
+<html lang="de">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>PHM – E-Mail bestätigen</title></head>
+<body>
+    <main>
+        <h1>Bestätige deine E-Mail-Adresse</h1>
+        <p>Wir haben eine Bestätigungsnachricht an <strong>{{ email }}</strong> gesendet.</p>
+        <p>Der Link ist 24 Stunden gültig. Prüfe auch deinen Spam-Ordner.</p>
+        <p><a href="{% url 'auth' %}">Zur Anmeldung</a></p>
+    </main>
+</body>
+</html>
