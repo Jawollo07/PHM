@@ -502,6 +502,86 @@ class ManualWalletAdjustmentAdminTests(TestCase):
         self.assertEqual(entry.reference, "TEST-ADMIN-001")
         self.assertEqual(entry.metadata["admin_user_id"], str(self.user.pk))
 
+
+    def test_transaction_changelist_supports_search_and_admin_filters(self):
+        from django.urls import reverse
+        from apps.wallet.services import adjust_wallet_balance
+
+        key = LedgerSigningKey.objects.create(
+            key_id="wallet-list-test-key",
+            label="Wallet list test key",
+            public_key=b"wallet-list-test-public-key",
+            fingerprint="9" * 64,
+        )
+        entry = adjust_wallet_balance(
+            self.wallet.pk,
+            2345,
+            description="Ledger list search fixture",
+            idempotency_key="ledger-list-search-1",
+            reference="LEDGER-ADMIN-42",
+            signing_key_id=key.pk,
+            signer=lambda payload: b"ledger-list-test-signature",
+            metadata={
+                "source": "django_admin_manual_adjustment",
+                "admin_user_id": str(self.user.pk),
+                "admin_username": self.user.get_username(),
+            },
+        )
+
+        response = self.client.get(
+            reverse("admin:wallet_wallettransaction_changelist"),
+            {
+                "q": "LEDGER-ADMIN-42",
+                "admin_actor": str(self.user.pk),
+                "direction": "credit",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "LEDGER-ADMIN-42")
+        self.assertContains(response, "wallet-admin")
+        self.assertContains(
+            response,
+            reverse("admin:wallet_wallettransaction_change", args=(entry.pk,)),
+        )
+
+    def test_transaction_detail_is_read_only_and_shows_integrity_and_admin_metadata(self):
+        from django.urls import reverse
+        from apps.wallet.services import adjust_wallet_balance
+
+        key = LedgerSigningKey.objects.create(
+            key_id="wallet-detail-test-key",
+            label="Wallet detail test key",
+            public_key=b"wallet-detail-test-public-key",
+            fingerprint="8" * 64,
+        )
+        entry = adjust_wallet_balance(
+            self.wallet.pk,
+            -1,
+            description="Ledger detail fixture",
+            idempotency_key="ledger-detail-search-1",
+            reference="LEDGER-DETAIL-42",
+            signing_key_id=key.pk,
+            signer=lambda payload: b"detail-signature",
+            metadata={
+                "source": "django_admin_manual_adjustment",
+                "admin_user_id": str(self.user.pk),
+                "admin_username": self.user.get_username(),
+            },
+        )
+
+        response = self.client.get(
+            reverse("admin:wallet_wallettransaction_change", args=(entry.pk,))
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Ledger detail fixture")
+        self.assertContains(response, "LEDGER-DETAIL-42")
+        self.assertContains(response, entry.entry_hash)
+        self.assertContains(response, b"detail-signature".hex())
+        self.assertContains(response, "wallet-admin")
+        self.assertNotContains(response, 'name="_save"')
+
     def test_manual_adjustment_admin_route_requires_specific_permission(self):
         from django.urls import reverse
 
