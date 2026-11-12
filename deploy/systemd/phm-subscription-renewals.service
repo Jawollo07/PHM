@@ -1,0 +1,21 @@
+[Unit]
+Description=PHM opted-in subscription renewals
+Documentation=https://github.com/Jawollo07/PHM
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=phm
+Group=phm
+WorkingDirectory=/opt/phm/backend
+EnvironmentFile=/etc/phm/phm.env
+ExecStart=/opt/phm/.venv/bin/python /opt/phm/backend/manage.py process_subscription_renewals
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectHome=true
+ProtectSystem=full
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
