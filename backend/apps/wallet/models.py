@@ -52,6 +52,11 @@ class WalletQuerySet(models.QuerySet):
             raise TypeError("Wallet balances may only be changed by the ledger service.")
         return super().bulk_update(objs, fields, **kwargs)
 
+    def bulk_create(self, objs, **kwargs):
+        if any(wallet.balance_cents != 0 for wallet in objs):
+            raise TypeError("New wallets must start with a zero balance.")
+        return super().bulk_create(objs, **kwargs)
+
     def apply_ledger_balance(self, balance_cents, updated_at):
         if type(balance_cents) is not int or balance_cents < 0:
             raise ValueError("Ledger balance must be a non-negative integer number of cents.")
