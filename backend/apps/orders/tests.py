@@ -1,0 +1,225 @@
+from django.contrib.auth import get_user_model
+from django.test import TestCase
+
+from apps.catalog.models import HostingPlan, HostingProduct
+from apps.wallet.models import LedgerSigningKey, Wallet
+from apps.wallet.services import credit_wallet
+from apps.orders.models import Order
+from apps.orders.services import (
+    IdempotencyConflict,
+    OrderError,
+    OrderNotCancellable,
+    cancel_pending_order,
+    confirm_order_payment,
+    place_order,
+)
+
+
+class OrderServiceTests(TestCase):
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(
+            username="order-customer",
+            email="order-customer@example.com",
+            password="secure-test-password",
+        )
+        self.wallet = self.user.customer.wallet
+        self.product = HostingProduct.objects.create(
+            name="Game Server",
+            slug="game-server",
+            is_active=True,
+        )
+        self.plan = HostingPlan.objects.create(
+            product=self.product,
+            name="Starter",
+            slug="starter",
+            price_cents=1200,
+            setup_fee_cents=300,
+            billing_interval_unit=HostingPlan.IntervalUnit.MONTH,
+            billing_interval_count=1,
+            resource_limits={"memory_mb": 4096},
+            is_active=True,
+        )
+        self.key = LedgerSigningKey.objects.create(
+            key_id="order-service-test-key",
+            label="Order service test key",
+            public_key=b"order-service-test-public-key",
+            fingerprint="b" * 64,
+        )
+        self.signer = lambda payload: b"order-service-signature"
+
+    def fund_wallet(self, amount=10000):
+        credit_wallet(
+            self.wallet.pk,
+            amount,
+            description="Order test funding",
+            idempotency_key=f"order-test-funding-{amount}",
+            signing_key_id=self.key.pk,
+            signer=self.signer,
+        )
+
+    def test_place_order_reserves_funds_without_spending_them(self):
+        self.fund_wallet()
+        order = place_order(
+            self.user.customer.pk,
+            self.plan.pk,
+            idempotency_key="order-place-001",
+        )
+        self.wallet.refresh_from_db()
+        self.assertEqual(order.status, Order.Status.PENDING_PAYMENT)
+        self.assertEqual(order.total_cents, 1500)
+        self.assertEqual(self.wallet.balance_cents, 10000)
+        self.assertEqual(self.wallet.available_balance_cents, 8500)
+        self.assertEqual(order.items.get().line_total_cents, 1500)
+
+    def test_confirm_order_captures_hold_and_debits_wallet_once(self):
+        self.fund_wallet()
+        order = place_order(
+            self.user.customer.pk,
+            self.plan.pk,
+            idempotency_key="order-confirm-001",
+        )
+        paid = confirm_order_payment(
+            order.pk,
+            signing_key_id=self.key.pk,
+            signer=self.signer,
+        )
+        repeated = confirm_order_payment(
+            order.pk,
+            signing_key_id=self.key.pk,
+            signer=self.signer,
+        )
+        self.wallet.refresh_from_db()
+        self.assertEqual(paid.status, Order.Status.PAID)
+        self.assertEqual(repeated.pk, order.pk)
+        self.assertEqual(self.wallet.balance_cents, 8500)
+        self.assertEqual(self.wallet.transactions.filter(type="purchase").count(), 1)
+        self.assertIsNotNone(paid.paid_transaction_id)
+
+    def test_cancel_pending_order_releases_reserved_funds(self):
+        self.fund_wallet()
+        order = place_order(
+            self.user.customer.pk,
+            self.plan.pk,
+            idempotency_key="order-cancel-001",
+        )
+        cancelled = cancel_pending_order(order.pk)
+        self.wallet.refresh_from_db()
+        self.assertEqual(cancelled.status, Order.Status.CANCELLED)
+        self.assertEqual(self.wallet.balance_cents, 10000)
+        self.assertEqual(self.wallet.available_balance_cents, 10000)
+
+    def test_insufficient_funds_rolls_back_order_and_hold(self):
+        with self.assertRaises(Exception):
+            place_order(
+                self.user.customer.pk,
+                self.plan.pk,
+                idempotency_key="order-insufficient-001",
+            )
+        self.assertFalse(Order.objects.exists())
+        self.assertFalse(self.wallet.holds.exists())
+
+    def test_idempotent_order_retry_returns_same_order(self):
+        self.fund_wallet()
+        first = place_order(
+            self.user.customer.pk,
+            self.plan.pk,
+            idempotency_key="order-idempotent-001",
+        )
+        second = place_order(
+            self.user.customer.pk,
+            self.plan.pk,
+            idempotency_key="order-idempotent-001",
+        )
+        self.assertEqual(first.pk, second.pk)
+        self.assertEqual(Order.objects.count(), 1)
+
+    def test_idempotency_key_cannot_be_reused_for_another_plan(self):
+        self.fund_wallet()
+        first = place_order(
+            self.user.customer.pk,
+            self.plan.pk,
+            idempotency_key="order-conflict-001",
+        )
+        another = HostingPlan.objects.create(
+            product=self.product,
+            name="Plus",
+            slug="plus",
+            price_cents=2000,
+            is_active=True,
+        )
+        with self.assertRaises(IdempotencyConflict):
+            place_order(
+                self.user.customer.pk,
+                another.pk,
+                idempotency_key="order-conflict-001",
+            )
+
+    def test_order_item_preserves_price_snapshot(self):
+        self.fund_wallet()
+        order = place_order(
+            self.user.customer.pk,
+            self.plan.pk,
+            idempotency_key="order-snapshot-001",
+        )
+        self.plan.price_cents = 5000
+        self.plan.save(update_fields=["price_cents", "updated_at"])
+        item = order.items.get()
+        self.assertEqual(item.unit_price_cents, 1200)
+        self.assertEqual(item.line_total_cents, 1500)
+        self.assertEqual(order.total_cents, 1500)
+
+    def test_free_plan_is_immediately_paid_without_zero_value_ledger_entry(self):
+        free_plan = HostingPlan.objects.create(
+            product=self.product,
+            name="Free",
+            slug="free",
+            price_cents=0,
+            billing_interval_unit=HostingPlan.IntervalUnit.ONCE,
+            is_active=True,
+        )
+        order = place_order(
+            self.user.customer.pk,
+            free_plan.pk,
+            idempotency_key="order-free-001",
+        )
+        self.assertEqual(order.status, Order.Status.PAID)
+        self.assertIsNone(order.wallet_hold_id)
+        self.assertIsNone(order.paid_transaction_id)
+        self.assertEqual(order.total_cents, 0)
+
+    def test_inactive_plan_cannot_be_ordered(self):
+        self.plan.is_active = False
+        self.plan.save(update_fields=["is_active", "updated_at"])
+        with self.assertRaises(OrderError):
+            place_order(
+                self.user.customer.pk,
+                self.plan.pk,
+                idempotency_key="order-inactive-001",
+            )
+
+    def test_paid_order_cannot_be_cancelled_without_refund_flow(self):
+        self.fund_wallet()
+        order = place_order(
+            self.user.customer.pk,
+            self.plan.pk,
+            idempotency_key="order-paid-cancel-001",
+        )
+        confirm_order_payment(
+            order.pk,
+            signing_key_id=self.key.pk,
+            signer=self.signer,
+        )
+        with self.assertRaises(OrderNotCancellable):
+            cancel_pending_order(order.pk)
+
+
+class OrderAdminTests(TestCase):
+    def test_orders_are_read_only_in_admin(self):
+        admin_user = get_user_model().objects.create_superuser(
+            username="order-admin",
+            email="order-admin@example.com",
+            password="secure-test-password",
+        )
+        self.client.force_login(admin_user)
+        response = self.client.get("/admin/orders/order/")
+        self.assertEqual(response.status_code, 200)
