@@ -45,6 +45,7 @@ INSTALLED_APPS = [
     'apps.wallet.apps.WalletConfig',
     'apps.orders.apps.OrdersConfig',
     'apps.subscriptions.apps.SubscriptionsConfig',
+    'apps.pelican.apps.PelicanConfig',
 ]
 
 MIDDLEWARE = [
@@ -144,3 +145,7 @@ WALLET_LEDGER_SIGNER = os.environ.get(
 )
 WALLET_LEDGER_KEY_ID = os.environ.get('WALLET_LEDGER_KEY_ID', '')
 WALLET_LEDGER_PRIVATE_KEY_B64 = os.environ.get('WALLET_LEDGER_PRIVATE_KEY_B64', '')
+# Pelican Application API. Keep the token outside the repository.
+PELICAN_PANEL_URL = os.environ.get("PELICAN_PANEL_URL", "").rstrip("/")
+PELICAN_APPLICATION_API_TOKEN = os.environ.get("PELICAN_APPLICATION_API_TOKEN", "")
+PELICAN_API_TIMEOUT = int(os.environ.get("PELICAN_API_TIMEOUT", "10"))
