@@ -12,10 +12,33 @@ from apps.wallet.signing import verify_payload
 class Command(BaseCommand):
     help = (
         "Verify the current ledger state and append a new signed global checkpoint. "
-        "Never creates a checkpoint over an invalid or changed ledger."
+        "Never creates a checkpoint over an invalid ledger."
     )
 
     def handle(self, *args, **options):
+        archive_path = settings.WALLET_LEDGER_CHECKPOINT_ARCHIVE_FILE
+        if settings.WALLET_LEDGER_AUTO_CHECKPOINT and not archive_path:
+            raise CommandError(
+                "WALLET_LEDGER_CHECKPOINT_ARCHIVE_FILE is required when "
+                "automatic checkpointing is enabled."
+            )
+        if archive_path:
+            from apps.wallet.checkpoint_archive import verify_checkpoint_archive
+
+            try:
+                archive_valid = verify_checkpoint_archive(archive_path=archive_path)
+            except Exception as exc:
+                raise CommandError(
+                    f"External checkpoint archive verification raised "
+                    f"{type(exc).__name__}: {exc}"
+                ) from exc
+            if not archive_valid:
+                raise CommandError(
+                    "The external checkpoint archive does not match the database. "
+                    "Verify the current database and bootstrap the archive before "
+                    "creating another checkpoint."
+                )
+
         wallets = Wallet.objects.order_by("pk")
         for wallet in wallets.iterator():
             try:
@@ -41,7 +64,6 @@ class Command(BaseCommand):
                 valid = verify_ledger_checkpoint(
                     previous.pk,
                     verifier=verify_payload,
-                    compare_current_state=True,
                 )
             except Exception as exc:
                 raise CommandError(
@@ -50,8 +72,9 @@ class Command(BaseCommand):
                 ) from exc
             if not valid:
                 raise CommandError(
-                    f"Existing checkpoint #{previous.checkpoint_number} does not match "
-                    "the current ledger; no new checkpoint was created."
+                    f"Existing checkpoint #{previous.checkpoint_number} failed "
+                    "signature or checkpoint-chain verification; "
+                    "no new checkpoint was created."
                 )
 
         key_id = getattr(settings, "WALLET_LEDGER_KEY_ID", "")

@@ -307,6 +307,7 @@ class LedgerCheckpointTests(TestCase):
             idempotency_key="checkpoint-credit-1",
             signing_key_id=self.key.pk,
             signer=lambda payload: b"transaction-signature",
+            metadata={},
         )
         checkpoint = create_ledger_checkpoint(
             signing_key_id=self.key.pk,
@@ -329,13 +330,13 @@ class LedgerCheckpointTests(TestCase):
             with connection.cursor() as cursor:
                 cursor.execute(
                     "UPDATE ledger_checkpoints SET transaction_count = 99 WHERE id = %s",
-                    [str(checkpoint.pk)],
+                    [checkpoint.pk.hex],
                 )
         with self.assertRaises(DatabaseError), transaction.atomic():
             with connection.cursor() as cursor:
                 cursor.execute(
                     "DELETE FROM ledger_checkpoints WHERE id = %s",
-                    [str(checkpoint.pk)],
+                    [checkpoint.pk.hex],
                 )
 
     def test_checkpoint_chain_links_consecutive_snapshots(self):
@@ -371,7 +372,7 @@ class LedgerCheckpointTests(TestCase):
         with connection.cursor() as cursor:
             cursor.execute(
                 "UPDATE wallets SET balance_cents = 100 WHERE id = %s",
-                [str(self.wallet.pk)],
+                [self.wallet.pk.hex],
             )
 
         with self.assertRaises(ValueError):
@@ -409,7 +410,9 @@ class WalletSigningTests(TestCase):
             encryption_algorithm=serialization.NoEncryption(),
         )
         with override_settings(
-            WALLET_LEDGER_PRIVATE_KEY_B64=base64.b64encode(raw_private).decode("ascii")
+            WALLET_LEDGER_PRIVATE_KEY_FILE="",
+            WALLET_LEDGER_PRIVATE_KEY_B64=base64.b64encode(raw_private).decode("ascii"),
+            WALLET_LEDGER_PRIVATE_KEY_HEX="",
         ):
             payload = b"PHM manual wallet adjustment"
             signature = sign_payload(payload)
@@ -419,6 +422,171 @@ class WalletSigningTests(TestCase):
             )
             self.assertTrue(verify_payload(public_key, payload, signature))
             self.assertFalse(verify_payload(public_key, b"tampered", signature))
+
+    def test_128_character_hex_ed25519_key_signs_and_verifies(self):
+        from cryptography.hazmat.primitives import serialization
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+        from django.test import override_settings
+        from apps.wallet.signing import (
+            public_key_from_configured_key,
+            sign_payload,
+            verify_payload,
+        )
+
+        private_key = Ed25519PrivateKey.generate()
+        raw_seed = private_key.private_bytes(
+            encoding=serialization.Encoding.Raw,
+            format=serialization.PrivateFormat.Raw,
+            encryption_algorithm=serialization.NoEncryption(),
+        )
+        raw_public_key = private_key.public_key().public_bytes_raw()
+        key_hex = (raw_seed + raw_public_key).hex()
+        self.assertEqual(len(key_hex), 128)
+
+        with override_settings(
+            WALLET_LEDGER_PRIVATE_KEY_FILE="",
+            WALLET_LEDGER_PRIVATE_KEY_B64="",
+            WALLET_LEDGER_PRIVATE_KEY_HEX=key_hex,
+        ):
+            payload = b"128-character ledger key"
+            signature = sign_payload(payload)
+            derived_public_key, _ = public_key_from_configured_key()
+
+        self.assertEqual(derived_public_key, raw_public_key)
+        self.assertTrue(verify_payload(raw_public_key, payload, signature))
+
+    def test_128_character_hex_ed25519_key_rejects_mismatched_public_key(self):
+        from cryptography.hazmat.primitives import serialization
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+        from django.core.exceptions import ImproperlyConfigured
+        from django.test import override_settings
+        from apps.wallet.signing import sign_payload
+
+        private_key = Ed25519PrivateKey.generate()
+        raw_seed = private_key.private_bytes(
+            encoding=serialization.Encoding.Raw,
+            format=serialization.PrivateFormat.Raw,
+            encryption_algorithm=serialization.NoEncryption(),
+        )
+        mismatched_key_hex = (raw_seed + b"\x00" * 32).hex()
+
+        with override_settings(
+            WALLET_LEDGER_PRIVATE_KEY_FILE="",
+            WALLET_LEDGER_PRIVATE_KEY_B64="",
+            WALLET_LEDGER_PRIVATE_KEY_HEX=mismatched_key_hex,
+        ):
+            with self.assertRaisesRegex(
+                ImproperlyConfigured,
+                "does not match its private seed",
+            ):
+                sign_payload(b"invalid expanded key")
+
+    def test_pem_file_signer_works_without_private_key_environment_values(self):
+        from pathlib import Path
+        from tempfile import TemporaryDirectory
+
+        from cryptography.hazmat.primitives import serialization
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+        from django.test import override_settings
+        from apps.wallet.signing import (
+            public_key_from_configured_key,
+            sign_payload,
+            verify_payload,
+        )
+
+        private_key = Ed25519PrivateKey.generate()
+        pem_data = private_key.private_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PrivateFormat.PKCS8,
+            encryption_algorithm=serialization.NoEncryption(),
+        )
+        raw_public_key = private_key.public_key().public_bytes_raw()
+
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "wallet-ledger.pem"
+            path.write_bytes(pem_data)
+            path.chmod(0o600)
+            with override_settings(
+                WALLET_LEDGER_PRIVATE_KEY_FILE=str(path),
+                WALLET_LEDGER_PRIVATE_KEY_B64="",
+                WALLET_LEDGER_PRIVATE_KEY_HEX="",
+            ):
+                payload = b"file-based ledger key"
+                signature = sign_payload(payload)
+                derived_public_key, _ = public_key_from_configured_key()
+
+        self.assertEqual(derived_public_key, raw_public_key)
+        self.assertTrue(verify_payload(raw_public_key, payload, signature))
+
+    def test_hex_key_file_reuses_existing_key_without_environment_secret(self):
+        from pathlib import Path
+        from tempfile import TemporaryDirectory
+
+        from cryptography.hazmat.primitives import serialization
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+        from django.test import override_settings
+        from apps.wallet.signing import (
+            public_key_from_configured_key,
+            sign_payload,
+            verify_payload,
+        )
+
+        private_key = Ed25519PrivateKey.generate()
+        seed = private_key.private_bytes(
+            encoding=serialization.Encoding.Raw,
+            format=serialization.PrivateFormat.Raw,
+            encryption_algorithm=serialization.NoEncryption(),
+        )
+        public_key = private_key.public_key().public_bytes_raw()
+        key_hex = (seed + public_key).hex()
+
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "wallet-ledger.hex"
+            path.write_text(key_hex, encoding="ascii")
+            path.chmod(0o600)
+            with override_settings(
+                WALLET_LEDGER_PRIVATE_KEY_FILE=str(path),
+                WALLET_LEDGER_PRIVATE_KEY_B64="",
+                WALLET_LEDGER_PRIVATE_KEY_HEX="",
+            ):
+                payload = b"existing hex key from protected file"
+                signature = sign_payload(payload)
+                derived_public_key, _ = public_key_from_configured_key()
+
+        self.assertEqual(derived_public_key, public_key)
+        self.assertTrue(verify_payload(public_key, payload, signature))
+
+    def test_pem_file_signer_rejects_group_or_world_access(self):
+        from pathlib import Path
+        from tempfile import TemporaryDirectory
+
+        from cryptography.hazmat.primitives import serialization
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+        from django.core.exceptions import ImproperlyConfigured
+        from django.test import override_settings
+        from apps.wallet.signing import sign_payload
+
+        private_key = Ed25519PrivateKey.generate()
+        pem_data = private_key.private_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PrivateFormat.PKCS8,
+            encryption_algorithm=serialization.NoEncryption(),
+        )
+
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "wallet-ledger.pem"
+            path.write_bytes(pem_data)
+            path.chmod(0o644)
+            with override_settings(
+                WALLET_LEDGER_PRIVATE_KEY_FILE=str(path),
+                WALLET_LEDGER_PRIVATE_KEY_B64="",
+                WALLET_LEDGER_PRIVATE_KEY_HEX="",
+            ):
+                with self.assertRaisesRegex(
+                    ImproperlyConfigured,
+                    "permissions to 0600",
+                ):
+                    sign_payload(b"insecure file permissions")
 
 
 class ManualWalletAdjustmentFormTests(TestCase):
@@ -480,6 +648,17 @@ class ManualWalletAdjustmentAdminTests(TestCase):
         self.wallet = self.user.customer.wallet
         self.client.force_login(self.user)
 
+    def test_wallet_changelist_renders_manual_adjustment_link(self):
+        from django.urls import reverse
+
+        response = self.client.get(reverse("admin:wallet_wallet_changelist"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(
+            response,
+            reverse("admin:wallet_wallet_manual_adjustment"),
+        )
+
     def test_manual_adjustment_admin_route_posts_signed_credit(self):
         import base64
         import hashlib
@@ -511,6 +690,7 @@ class ManualWalletAdjustmentAdminTests(TestCase):
             WALLET_LEDGER_SIGNER="apps.wallet.signing.sign_payload",
             WALLET_LEDGER_KEY_ID=signing_key.key_id,
             WALLET_LEDGER_PRIVATE_KEY_B64=base64.b64encode(raw_private).decode("ascii"),
+            WALLET_LEDGER_PRIVATE_KEY_HEX="",
         ):
             get_response = self.client.get(url)
             self.assertEqual(get_response.status_code, 200)

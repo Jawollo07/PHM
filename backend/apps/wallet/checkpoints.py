@@ -2,6 +2,8 @@ import hashlib
 import json
 from typing import Callable
 
+from django.conf import settings
+from django.core.exceptions import ImproperlyConfigured
 from django.db import transaction
 from django.utils import timezone
 
@@ -17,12 +19,14 @@ def _canonical_bytes(payload: dict) -> bytes:
     ).encode("utf-8")
 
 
-def _ledger_snapshot() -> tuple[str, int, int]:
+def _ledger_snapshot(*, using=None) -> tuple[str, int, int]:
     """Return a deterministic root after checking every wallet's structural chain."""
     states = {}
-    transactions = WalletTransaction.objects.select_related(
-        "signing_key"
-    ).order_by("wallet_id", "sequence_number")
+    transactions = (
+        WalletTransaction.objects.db_manager(using)
+        .select_related("signing_key")
+        .order_by("wallet_id", "sequence_number")
+    )
 
     for entry in transactions.iterator():
         state = states.setdefault(
@@ -71,7 +75,7 @@ def _ledger_snapshot() -> tuple[str, int, int]:
     leaves = []
     transaction_count = 0
     wallet_count = 0
-    for wallet in Wallet.objects.order_by("pk").iterator():
+    for wallet in Wallet.objects.db_manager(using).order_by("pk").iterator():
         state = states.get(
             wallet.pk,
             {"sequence": 0, "hash": GENESIS_HASH, "balance": 0, "count": 0},
@@ -105,40 +109,88 @@ def _checkpoint_payload(checkpoint: LedgerCheckpoint) -> dict:
     }
 
 
-@transaction.atomic
-def create_ledger_checkpoint(*, signing_key_id, signer: Callable[[bytes], bytes]) -> LedgerCheckpoint:
+def create_ledger_checkpoint(
+    *,
+    signing_key_id,
+    signer: Callable[[bytes], bytes],
+    using=None,
+) -> LedgerCheckpoint:
     """Create a signed global checkpoint; signing keys remain external to PHM."""
-    # Lock the key registry in a stable order so concurrent checkpoint creators
-    # serialize even when they request different active keys.
-    list(LedgerSigningKey.objects.select_for_update().order_by("pk").values_list("pk", flat=True))
-    # Wallet services lock the wallet row before changing its ledger or balance.
-    # Locking all existing wallets gives this snapshot a stable financial view.
-    list(Wallet.objects.select_for_update().order_by("pk").values_list("pk", flat=True))
-    signing_key = LedgerSigningKey.objects.get(pk=signing_key_id)
-    if signing_key.status != LedgerSigningKey.Status.ACTIVE:
-        raise ValueError("The checkpoint signing key is not active.")
+    with transaction.atomic(using=using):
+        archive_path = settings.WALLET_LEDGER_CHECKPOINT_ARCHIVE_FILE
+        if settings.WALLET_LEDGER_AUTO_CHECKPOINT and not archive_path:
+            raise ImproperlyConfigured(
+                "WALLET_LEDGER_CHECKPOINT_ARCHIVE_FILE is required when "
+                "automatic checkpointing is enabled."
+            )
 
-    previous = LedgerCheckpoint.objects.order_by("-checkpoint_number").first()
-    root_hash, transaction_count, wallet_count = _ledger_snapshot()
-    created_at = timezone.now()
-    checkpoint = LedgerCheckpoint(
-        checkpoint_number=(previous.checkpoint_number + 1) if previous else 1,
-        previous_checkpoint_hash=previous.checkpoint_hash if previous else GENESIS_HASH,
-        ledger_root_hash=root_hash,
-        transaction_count=transaction_count,
-        wallet_count=wallet_count,
-        payload_version=1,
-        signing_key=signing_key,
-        created_at=created_at,
-    )
-    payload = _canonical_bytes(_checkpoint_payload(checkpoint))
-    checkpoint.checkpoint_hash = hashlib.sha256(payload).hexdigest()
-    signature = signer(payload)
-    if not isinstance(signature, bytes) or not signature:
-        raise ValueError("The signing provider returned an invalid checkpoint signature.")
-    checkpoint.signature = signature
-    checkpoint.save(force_insert=True)
-    return checkpoint
+        signing_keys = LedgerSigningKey.objects.db_manager(using)
+        # Lock the key registry in a stable order so concurrent creators serialize.
+        list(
+            signing_keys.select_for_update()
+            .order_by("pk")
+            .values_list("pk", flat=True)
+        )
+        wallets = Wallet.objects.db_manager(using)
+        # All wallet-changing services acquire signing-key locks before wallet locks.
+        list(wallets.select_for_update().order_by("pk").values_list("pk", flat=True))
+        if archive_path:
+            from .checkpoint_archive import verify_checkpoint_archive
+
+            if not verify_checkpoint_archive(archive_path=archive_path, using=using):
+                raise ValueError(
+                    "The external checkpoint archive does not match the database. "
+                    "Verify the database and bootstrap the archive before creating "
+                    "another checkpoint."
+                )
+            from .checkpoint_archive import _trusted_key_snapshot
+
+            _trusted_key_snapshot(using=using)
+
+        signing_key = signing_keys.get(pk=signing_key_id)
+        if signing_key.status != LedgerSigningKey.Status.ACTIVE:
+            raise ValueError("The checkpoint signing key is not active.")
+
+        checkpoints = LedgerCheckpoint.objects.db_manager(using)
+        previous = checkpoints.order_by("-checkpoint_number").first()
+        root_hash, transaction_count, wallet_count = _ledger_snapshot(using=using)
+        created_at = timezone.now()
+        checkpoint = LedgerCheckpoint(
+            checkpoint_number=(previous.checkpoint_number + 1) if previous else 1,
+            previous_checkpoint_hash=previous.checkpoint_hash if previous else GENESIS_HASH,
+            ledger_root_hash=root_hash,
+            transaction_count=transaction_count,
+            wallet_count=wallet_count,
+            payload_version=1,
+            signing_key=signing_key,
+            created_at=created_at,
+        )
+        payload = _canonical_bytes(_checkpoint_payload(checkpoint))
+        checkpoint.checkpoint_hash = hashlib.sha256(payload).hexdigest()
+        signature = signer(payload)
+        if not isinstance(signature, bytes) or not signature:
+            raise ValueError("The signing provider returned an invalid checkpoint signature.")
+        if archive_path:
+            from .signing import verify_payload
+
+            if not verify_payload(bytes(signing_key.public_key), payload, signature):
+                raise ValueError(
+                    "The checkpoint signing provider does not match the registered public key."
+                )
+        checkpoint.signature = signature
+        checkpoint.save(using=using, force_insert=True)
+        if archive_path:
+            from .checkpoint_archive import append_checkpoint_to_archive
+
+            transaction.on_commit(
+                lambda checkpoint_id=checkpoint.pk: append_checkpoint_to_archive(
+                    checkpoint_id,
+                    archive_path=archive_path,
+                    using=using,
+                ),
+                using=using,
+            )
+        return checkpoint
 
 
 def verify_ledger_checkpoint(
@@ -146,14 +198,16 @@ def verify_ledger_checkpoint(
     *,
     verifier: Callable[[bytes, bytes, bytes], bool],
     compare_current_state: bool = False,
+    using=None,
 ) -> bool:
     """Verify checkpoint hash/signature chain and optionally the latest live ledger root."""
-    target = LedgerCheckpoint.objects.filter(pk=checkpoint_id).first()
+    checkpoints = LedgerCheckpoint.objects.db_manager(using)
+    target = checkpoints.filter(pk=checkpoint_id).first()
     if target is None:
         return False
 
     expected_previous_hash = GENESIS_HASH
-    checkpoints = LedgerCheckpoint.objects.filter(
+    checkpoints = checkpoints.filter(
         checkpoint_number__lte=target.checkpoint_number
     ).select_related("signing_key").order_by("checkpoint_number")
 
@@ -178,10 +232,12 @@ def verify_ledger_checkpoint(
     if last is None or last.pk != target.pk:
         return False
     if compare_current_state:
-        latest = LedgerCheckpoint.objects.order_by("-checkpoint_number").first()
+        latest = LedgerCheckpoint.objects.db_manager(using).order_by(
+            "-checkpoint_number"
+        ).first()
         if latest is None or latest.pk != target.pk:
             return False
-        root_hash, transaction_count, wallet_count = _ledger_snapshot()
+        root_hash, transaction_count, wallet_count = _ledger_snapshot(using=using)
         if (
             root_hash != target.ledger_root_hash
             or transaction_count != target.transaction_count

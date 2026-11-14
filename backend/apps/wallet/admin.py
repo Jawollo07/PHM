@@ -110,7 +110,7 @@ class WalletAdmin(admin.ModelAdmin):
             path(
                 "manual-adjustment/",
                 self.admin_site.admin_view(self.manual_adjustment_view),
-                name="wallet_manual_adjustment",
+                name="wallet_wallet_manual_adjustment",
             ),
         ]
         return custom_urls + super().get_urls()

@@ -66,6 +66,7 @@ class AccountViewTests(TestCase):
             idempotency_key="account-view-credit-1",
             signing_key_id=key.pk,
             signer=lambda payload: b"account-view-signature",
+            metadata={},
         )
         other_user = get_user_model().objects.create_user(
             username="other-account",
@@ -79,6 +80,7 @@ class AccountViewTests(TestCase):
             idempotency_key="other-account-credit-1",
             signing_key_id=key.pk,
             signer=lambda payload: b"account-view-signature",
+            metadata={},
         )
 
         response = self.client.get('/account/')

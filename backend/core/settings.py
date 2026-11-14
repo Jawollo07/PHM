@@ -138,13 +138,21 @@ EMAIL_BACKEND = os.environ.get(
 DEFAULT_FROM_EMAIL = os.environ.get('DJANGO_DEFAULT_FROM_EMAIL', 'noreply@localhost')
 
 # Dotted import path to an external Ed25519 signing adapter callable(payload: bytes) -> bytes.
-# The private-key environment variable is required at runtime; otherwise signing fails closed.
+# Prefer a protected PEM file; legacy private-key environment variables remain supported.
 WALLET_LEDGER_SIGNER = os.environ.get(
     'WALLET_LEDGER_SIGNER',
     'apps.wallet.signing.sign_payload',
 )
 WALLET_LEDGER_KEY_ID = os.environ.get('WALLET_LEDGER_KEY_ID', '')
+WALLET_LEDGER_PRIVATE_KEY_FILE = os.environ.get('WALLET_LEDGER_PRIVATE_KEY_FILE', '')
 WALLET_LEDGER_PRIVATE_KEY_B64 = os.environ.get('WALLET_LEDGER_PRIVATE_KEY_B64', '')
+WALLET_LEDGER_PRIVATE_KEY_HEX = os.environ.get('WALLET_LEDGER_PRIVATE_KEY_HEX', '')
+WALLET_LEDGER_CHECKPOINT_ARCHIVE_FILE = os.environ.get(
+    'WALLET_LEDGER_CHECKPOINT_ARCHIVE_FILE', ''
+)
+WALLET_LEDGER_AUTO_CHECKPOINT = os.environ.get(
+    'WALLET_LEDGER_AUTO_CHECKPOINT', 'false'
+).lower() == 'true'
 # Pelican Application API. Keep the token outside the repository.
 PELICAN_PANEL_URL = os.environ.get("PELICAN_PANEL_URL", "").rstrip("/")
 PELICAN_APPLICATION_API_TOKEN = os.environ.get("PELICAN_APPLICATION_API_TOKEN", "")

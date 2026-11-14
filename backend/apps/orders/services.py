@@ -9,6 +9,7 @@ from apps.wallet.services import (
     IdempotencyConflict,
     InsufficientFunds,
     capture_hold,
+    lock_ledger_signing_keys,
     place_hold,
     release_hold,
 )
@@ -116,6 +117,7 @@ def place_order(
 @transaction.atomic
 def confirm_order_payment(order_id, *, signing_key_id, signer) -> Order:
     """Capture the reserved wallet amount and append its signed purchase entry."""
+    lock_ledger_signing_keys()
     order = Order.objects.select_for_update().select_related("wallet_hold").get(pk=order_id)
     if order.status == Order.Status.PAID:
         _ensure_order_subscriptions(order)
@@ -167,6 +169,7 @@ def purchase_plan(
     quantity: int = 1,
 ) -> Order:
     """Place and immediately settle an order from the customer's wallet."""
+    lock_ledger_signing_keys()
     order = place_order(
         customer_id,
         plan_id,

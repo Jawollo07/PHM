@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
 
 from apps.wallet.checkpoints import verify_ledger_checkpoint
@@ -66,6 +67,28 @@ class Command(BaseCommand):
                 raise CommandError(
                     f"Checkpoint #{checkpoint.checkpoint_number}: signature, "
                     "checkpoint chain, or current ledger snapshot verification failed."
+                )
+
+        archive_path = settings.WALLET_LEDGER_CHECKPOINT_ARCHIVE_FILE
+        if settings.WALLET_LEDGER_AUTO_CHECKPOINT and not archive_path:
+            raise CommandError(
+                "WALLET_LEDGER_CHECKPOINT_ARCHIVE_FILE is required when "
+                "automatic checkpointing is enabled."
+            )
+        if archive_path:
+            from apps.wallet.checkpoint_archive import verify_checkpoint_archive
+
+            try:
+                archive_valid = verify_checkpoint_archive(archive_path=archive_path)
+            except Exception as exc:
+                raise CommandError(
+                    f"External checkpoint archive verification raised "
+                    f"{type(exc).__name__}: {exc}"
+                ) from exc
+            if not archive_valid:
+                raise CommandError(
+                    "The external checkpoint archive does not match the database. "
+                    "The database may have been modified or rolled back."
                 )
 
         suffix = (

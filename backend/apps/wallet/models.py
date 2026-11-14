@@ -47,12 +47,12 @@ class WalletQuerySet(models.QuerySet):
             raise TypeError("Wallet balances may only be changed by the ledger service.")
         return super().update(**kwargs)
 
-    def bulk_update(self, objs, fields, **kwargs):
+    def bulk_update(self, objs, fields, **kwargs): # pyright: ignore[reportIncompatibleMethodOverride]
         if "balance_cents" in fields:
             raise TypeError("Wallet balances may only be changed by the ledger service.")
         return super().bulk_update(objs, fields, **kwargs)
 
-    def bulk_create(self, objs, **kwargs):
+    def bulk_create(self, objs, **kwargs): # pyright: ignore[reportIncompatibleMethodOverride]
         objs = list(objs)
         if any(wallet.balance_cents != 0 for wallet in objs):
             raise TypeError("New wallets must start with a zero balance.")
@@ -144,7 +144,7 @@ class Wallet(models.Model):
 
     @property
     def reserved_balance_cents(self):
-        return self.holds.filter(
+        return self.holds.filter( # pyright: ignore[reportAttributeAccessIssue]
             status=WalletHold.Status.ACTIVE
         ).aggregate(
             total=models.Sum("amount_cents")
@@ -415,7 +415,7 @@ class WalletTransaction(models.Model):
         return (
             f"{self.type}: "
             f"{self.amount_cents / 100:.2f} EUR "
-            f"({self.wallet_id})"
+            f"({self.wallet_id})" # pyright: ignore[reportAttributeAccessIssue]
         )
 
 

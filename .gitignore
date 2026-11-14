@@ -7,3 +7,6 @@ __pycache__/
 *.log
 .coverage
 htmlcov/
+*.sqlite3
+*.pk
+*.pem

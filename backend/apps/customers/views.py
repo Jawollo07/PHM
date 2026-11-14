@@ -14,6 +14,35 @@ from apps.customers.services import provision_personal_customer
 from apps.wallet.models import Wallet
 
 
+def _format_eur(cents):
+    amount = f"{Decimal(cents) / Decimal('100'):,.2f}"
+    return f"{amount.replace(',', 'X').replace('.', ',').replace('X', '.')} EUR"
+
+
+def get_wallet_details(user):
+    try:
+        wallet = user.customer.wallet
+    except (Customer.DoesNotExist, Wallet.DoesNotExist):
+        return None
+
+    return {
+        "balance": _format_eur(wallet.balance_cents),
+        "available_balance": _format_eur(wallet.available_balance_cents),
+        "reserved_balance": _format_eur(wallet.reserved_balance_cents),
+        "transactions": [
+            {
+                "description": entry.description,
+                "date": entry.created_at,
+                "type": entry.get_type_display(),
+                "reference": entry.reference,
+                "amount": _format_eur(entry.amount_cents),
+                "balance_after": _format_eur(entry.balance_after_cents),
+            }
+            for entry in wallet.transactions.order_by("-sequence_number")[:10]
+        ],
+    }
+
+
 def get_customer_details(user):
     try:
         customer = user.customer

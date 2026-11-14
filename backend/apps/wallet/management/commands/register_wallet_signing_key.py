@@ -5,11 +5,11 @@ from django.core.management.base import BaseCommand, CommandError
 from django.utils import timezone
 
 from apps.wallet.models import LedgerSigningKey
-from apps.wallet.signing import public_key_from_environment
+from apps.wallet.signing import public_key_from_configured_key
 
 
 class Command(BaseCommand):
-    help = "Register the Ed25519 public key derived from the external wallet signing secret."
+    help = "Register the public key derived from the configured external Ed25519 key."
 
     def handle(self, *args, **options):
         key_id = getattr(settings, "WALLET_LEDGER_KEY_ID", "")
@@ -18,7 +18,7 @@ class Command(BaseCommand):
             raise CommandError("WALLET_LEDGER_KEY_ID is required.")
 
         try:
-            public_key, fingerprint = public_key_from_environment()
+            public_key, fingerprint = public_key_from_configured_key()
         except Exception as exc:
             raise CommandError(f"Could not load the external Ed25519 key: {exc}") from exc
 

@@ -157,9 +157,9 @@ def renew_subscription(
     if subscription.next_billing_at > now:
         raise SubscriptionNotDue("The next billing date has not arrived.")
 
-    wallet = Wallet.objects.select_for_update().get(customer=subscription.customer)
     transaction_entry = None
     if subscription.price_cents > 0:
+        wallet = Wallet.objects.get(customer=subscription.customer)
         idempotency_key = (
             f"subscription-renewal:{subscription.pk}:"
             f"{subscription.next_billing_at.isoformat()}"

@@ -3,7 +3,10 @@ import json
 from datetime import datetime
 from typing import Callable
 
+from django.conf import settings
+from django.core.exceptions import ImproperlyConfigured
 from django.db import transaction
+from django.utils.module_loading import import_string
 from django.utils import timezone
 
 from .models import GENESIS_HASH, LedgerSigningKey, Wallet, WalletHold, WalletTransaction
@@ -152,6 +155,8 @@ def _post_locked(
         raise Wallet.DoesNotExist("Wallet disappeared while posting a ledger transaction.")
     wallet.balance_cents = new_balance
     wallet.updated_at = created_at
+    if settings.WALLET_LEDGER_AUTO_CHECKPOINT:
+        create_configured_ledger_checkpoint(using=wallet._state.db)
     return entry
 
 
@@ -168,6 +173,7 @@ def post_transaction(
     reference: str = "",
     metadata: dict | None = None,
 ) -> WalletTransaction:
+    lock_ledger_signing_keys()
     wallet = Wallet.objects.select_for_update().get(pk=wallet_id)
     signing_key = LedgerSigningKey.objects.get(pk=signing_key_id)
     return _post_locked(
@@ -262,6 +268,7 @@ def place_hold(
 
 @transaction.atomic
 def capture_hold(hold_id, *, signing_key_id, signer: Signer) -> WalletTransaction | None:
+    lock_ledger_signing_keys()
     hold = WalletHold.objects.select_for_update().select_related("wallet").get(pk=hold_id)
     if hold.status == WalletHold.Status.CAPTURED:
         return hold.captured_transaction
@@ -308,13 +315,24 @@ def release_hold(hold_id) -> WalletHold:
     return hold
 
 
-def verify_wallet_chain(wallet_id, verifier: Callable[[bytes, bytes, bytes], bool]) -> bool:
+def lock_ledger_signing_keys(*, using=None) -> None:
+    """Lock the signing-key registry before any wallet row is locked or changed."""
+    keys = LedgerSigningKey.objects.db_manager(using)
+    list(keys.select_for_update().order_by("pk").values_list("pk", flat=True))
+
+
+def verify_wallet_chain(
+    wallet_id,
+    verifier: Callable[[bytes, bytes, bytes], bool],
+    *,
+    using=None,
+) -> bool:
     """Verify sequence, balance progression, hash links and signatures.
 
     The verifier receives (public_key, canonical_payload, signature); private keys
     remain outside the application database and are never loaded by this function.
     """
-    wallet = Wallet.objects.get(pk=wallet_id)
+    wallet = Wallet.objects.db_manager(using).get(pk=wallet_id)
     expected_balance = 0
     expected_previous_hash = GENESIS_HASH
 
@@ -352,3 +370,59 @@ def verify_wallet_chain(wallet_id, verifier: Callable[[bytes, bytes, bytes], boo
         expected_previous_hash = entry.entry_hash
 
     return expected_balance == wallet.balance_cents
+
+
+def create_configured_ledger_checkpoint(*, using=None):
+    """Verify the live ledger and append a checkpoint using configured signing."""
+    from .checkpoints import create_ledger_checkpoint, verify_ledger_checkpoint
+    from .models import LedgerCheckpoint
+    from .signing import verify_payload
+
+    key_id = settings.WALLET_LEDGER_KEY_ID
+    signer_path = settings.WALLET_LEDGER_SIGNER
+    if not key_id or not signer_path:
+        raise ImproperlyConfigured(
+            "WALLET_LEDGER_KEY_ID and WALLET_LEDGER_SIGNER are required "
+            "for automatic ledger checkpoints."
+        )
+
+    signing_keys = LedgerSigningKey.objects.db_manager(using)
+    try:
+        signing_key = signing_keys.get(
+            key_id=key_id,
+            status=LedgerSigningKey.Status.ACTIVE,
+        )
+    except LedgerSigningKey.DoesNotExist as exc:
+        raise ImproperlyConfigured(
+            "WALLET_LEDGER_KEY_ID must identify an active registered signing key."
+        ) from exc
+    except LedgerSigningKey.MultipleObjectsReturned as exc:
+        raise ImproperlyConfigured(
+            "WALLET_LEDGER_KEY_ID identifies multiple signing keys."
+        ) from exc
+
+    signer = import_string(signer_path)
+    checkpoints = LedgerCheckpoint.objects.db_manager(using)
+    previous = checkpoints.order_by("-checkpoint_number").first()
+    if previous is not None and not verify_ledger_checkpoint(
+        previous.pk,
+        verifier=verify_payload,
+        using=using,
+    ):
+        raise InvalidLedgerOperation(
+            "The existing ledger checkpoint chain failed verification."
+        )
+
+    wallets = Wallet.objects.db_manager(using).order_by("pk")
+    for wallet in wallets.iterator():
+        if not verify_wallet_chain(wallet.pk, verify_payload, using=using):
+            raise InvalidLedgerOperation(
+                f"Wallet {wallet.pk} failed ledger verification; "
+                "no checkpoint was created."
+            )
+
+    return create_ledger_checkpoint(
+        signing_key_id=signing_key.pk,
+        signer=signer,
+        using=using,
+    )

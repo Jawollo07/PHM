@@ -352,7 +352,9 @@ class CustomerOrderViewsTests(TestCase):
         return override_settings(
             WALLET_LEDGER_KEY_ID=self.key.key_id,
             WALLET_LEDGER_SIGNER="apps.wallet.signing.sign_payload",
+            WALLET_LEDGER_PRIVATE_KEY_FILE="",
             WALLET_LEDGER_PRIVATE_KEY_B64=base64.b64encode(raw).decode("ascii"),
+            WALLET_LEDGER_PRIVATE_KEY_HEX="",
         )
 
     def fund_wallet(self, amount=5000):
