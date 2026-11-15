@@ -276,13 +276,13 @@ class OrderServiceTests(TestCase):
             with connection.cursor() as cursor:
                 cursor.execute(
                     "UPDATE orders SET status = 'active' WHERE id = %s",
-                    [str(order.pk)],
+                    [order.pk.hex],
                 )
         with self.assertRaises(DatabaseError), transaction.atomic():
             with connection.cursor() as cursor:
                 cursor.execute(
                     "DELETE FROM orders WHERE id = %s",
-                    [str(order.pk)],
+                    [order.pk.hex],
                 )
 
 
