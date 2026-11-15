@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PHM – Meine Server</title>
+  <style>
+    :root{font-family:Inter,system-ui,sans-serif;color:#172033;background:#f3f6fb}
+    *{box-sizing:border-box}body{margin:0;min-width:320px}
+    main{width:min(100% - 2rem,960px);margin:0 auto;padding:2rem 0 4rem}
+    nav{display:flex;gap:1rem;flex-wrap:wrap;margin-bottom:2rem}
+    a{color:#3156a5}h1{margin:0;font-size:clamp(2rem,5vw,2.7rem)}
+    .intro{color:#647189;line-height:1.6;margin:.6rem 0 1.5rem}
+    .server{background:#fff;border:1px solid #e2e8f0;border-radius:14px;padding:1.2rem;margin:1rem 0}
+    .row{display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap}
+    .muted{color:#647189;font-size:.9rem}.status{font-weight:700}
+    .pill{display:inline-block;padding:.35rem .65rem;border-radius:999px;background:#eef2f8;color:#526078;font-size:.8rem}
+    .action{display:inline-block;margin-top:.8rem;padding:.65rem .9rem;border-radius:8px;background:#3156a5;color:#fff;text-decoration:none;font-weight:650}
+    .empty{padding:1.5rem;background:#fff;border:1px solid #e2e8f0;border-radius:14px;color:#647189}
+  </style>
+</head>
+<body>
+<main>
+  <nav aria-label="Hauptnavigation">
+    <a href="{% url 'account' %}">Mein Konto</a>
+    <a href="{% url 'orders' %}">Bestellungen</a>
+    <a href="{% url 'catalog' %}">Hosting-Angebote</a>
+  </nav>
+  <h1>Meine Server</h1>
+  <p class="intro">Hier siehst du den Bereitstellungsstatus deiner bestellten Pelican-Server. Serververwaltung und Konsole öffnest du direkt im Pelican Panel.</p>
+  {% for server in servers %}
+    <article class="server">
+      <div class="row">
+        <h2>{{ server.panel_name|default:server.order_item.plan_name }}{% if server.order_item.quantity > 1 %} · Instanz {{ server.quantity_index }}{% endif %}</h2>
+        <span class="pill status">{{ server.get_status_display }}</span>
+      </div>
+      <p class="muted">Bestellung {{ server.order_item.order_id }} · Angelegt {{ server.created_at|date:"d.m.Y H:i" }}</p>
+      {% if server.panel_server_id %}<p class="muted">Pelican-ID: {{ server.panel_server_id }} · Kennung: {{ server.panel_identifier }}</p>{% endif %}
+      {% if server.status == "failed" %}
+        <p class="muted">Die Bereitstellung wird automatisch erneut versucht. Fehlercode: {{ server.last_error_code|default:"unbekannt" }}</p>
+      {% elif server.status == "installing" %}
+        <p class="muted">Pelican installiert gerade die Serverdateien. Der Status wird automatisch aktualisiert.</p>
+      {% elif server.status == "pending" or server.status == "provisioning" %}
+        <p class="muted">Dein Server wartet auf die Bereitstellung.</p>
+      {% endif %}
+      {% if server.panel_url %}
+        <a class="action" href="{{ server.panel_url }}" target="_blank" rel="noopener noreferrer">Im Pelican Panel verwalten ↗</a>
+      {% endif %}
+    </article>
+  {% empty %}
+    <p class="empty">Du hast bisher keine Pelican-Server. Nach einer bezahlten Bestellung erscheinen deine Server hier.</p>
+  {% endfor %}
+</main>
+</body>
+</html>
