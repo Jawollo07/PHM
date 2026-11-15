@@ -172,3 +172,24 @@ class PelicanServerProvisioningTests(TestCase):
             call_command("provision_pelican_servers", "--limit", "1")
 
         self.assertEqual(PelicanServer.objects.count(), 52)
+
+    def test_queue_rotation_does_not_process_same_installing_record_forever(self):
+        for index in range(2):
+            order, _item = self.make_order(quantity=1, key=f"fair-queue-{index}")
+            enqueue_order_provisioning(order.pk)
+        selected = []
+
+        def mark_attempted(record_id):
+            record = PelicanServer.objects.get(pk=record_id)
+            selected.append(record.pk)
+            record.last_attempt_at = timezone.now()
+            record.save(update_fields=["last_attempt_at", "updated_at"])
+            return record
+
+        with patch("apps.pelican.management.commands.provision_pelican_servers.sync_pelican_server",
+                   side_effect=mark_attempted):
+            call_command("provision_pelican_servers", "--limit", "1")
+            call_command("provision_pelican_servers", "--limit", "1")
+
+        self.assertEqual(len(selected), 2)
+        self.assertNotEqual(selected[0], selected[1])
