@@ -1,13 +1,10 @@
 import hashlib
-import logging
 import secrets
-import smtplib
 from datetime import timedelta
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.mail import send_mail
-from django.db import transaction
 from django.urls import reverse
 from django.utils import timezone
 
@@ -17,7 +14,6 @@ from .models import EmailNotification, EmailVerification
 
 
 VERIFICATION_LIFETIME = timedelta(hours=24)
-logger = logging.getLogger(__name__)
 
 
 def issue_email_verification(user, *, request, purpose=EmailVerification.Purpose.REGISTRATION):
@@ -86,10 +82,8 @@ def _deliver_notification(user_id, category, subject, message):
 
 
 def _schedule_notification(user_id, category, subject, message):
-    transaction.on_commit(
-        lambda: _deliver_notification(user_id, category, subject, message),
-        robust=True,
-    )
+    # Persist in the caller's transaction with the business event.
+    return _deliver_notification(user_id, category, subject, message)
 
 
 def notify_wallet_payment_failed(user_id):
@@ -125,7 +119,7 @@ def notify_order_payment_failed(order_id):
             ),
         )
 
-    transaction.on_commit(send, robust=True)
+    send()
 
 
 def notify_order_confirmation(order_id):
@@ -167,7 +161,7 @@ def notify_order_confirmation(order_id):
             "\n".join(lines),
         )
 
-    transaction.on_commit(send, robust=True)
+    send()
 
 
 def notify_subscription_payment_failed(subscription_id):
@@ -192,7 +186,7 @@ def notify_subscription_payment_failed(subscription_id):
             ),
         )
 
-    transaction.on_commit(send, robust=True)
+    send()
 
 
 def notify_subscription_renewed(subscription_id):
@@ -221,7 +215,7 @@ def notify_subscription_renewed(subscription_id):
             ),
         )
 
-    transaction.on_commit(send, robust=True)
+    send()
 
 
 def notify_subscription_expired(subscription_id):
@@ -245,7 +239,7 @@ def notify_subscription_expired(subscription_id):
             ),
         )
 
-    transaction.on_commit(send, robust=True)
+    send()
 
 
 def notify_password_changed(user_id):

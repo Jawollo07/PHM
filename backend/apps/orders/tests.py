@@ -73,6 +73,7 @@ class OrderServiceTests(TestCase):
         self.assertEqual(order.items.get().line_total_cents, 1500)
 
     def test_confirm_order_captures_hold_and_debits_wallet_once(self):
+        from django.core.management import call_command
         from django.core import mail
 
         self.fund_wallet()
@@ -98,6 +99,7 @@ class OrderServiceTests(TestCase):
         self.assertEqual(self.wallet.balance_cents, 8500)
         self.assertEqual(self.wallet.transactions.filter(type="purchase").count(), 1)
         self.assertIsNotNone(paid.paid_transaction_id)
+        call_command("process_email_notifications")
         self.assertEqual(len(mail.outbox), 1)
         self.assertIn("Bestellübersicht", mail.outbox[0].body)
         self.assertIn("keine formale Rechnung", mail.outbox[0].body)
@@ -442,6 +444,7 @@ class CustomerOrderViewsTests(TestCase):
         self.assertEqual(self.wallet.transactions.filter(type="purchase").count(), 1)
 
     def test_insufficient_wallet_balance_does_not_create_order_or_hold(self):
+        from django.core.management import call_command
         from django.core import mail
         from django.urls import reverse
 
@@ -455,6 +458,7 @@ class CustomerOrderViewsTests(TestCase):
         self.assertContains(response, "Guthaben reicht")
         self.assertFalse(Order.objects.filter(customer=self.user.customer).exists())
         self.assertFalse(self.wallet.holds.exists())
+        call_command("process_email_notifications")
         self.assertEqual(len(mail.outbox), 1)
         self.assertIn("Zahlung fehlgeschlagen", mail.outbox[0].subject)
 
