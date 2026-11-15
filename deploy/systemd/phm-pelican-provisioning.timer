@@ -1,0 +1,12 @@
+[Unit]
+Description=Reconcile PHM Pelican server provisioning every minute
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=1min
+Persistent=true
+AccuracySec=15s
+Unit=phm-pelican-provisioning.service
+
+[Install]
+WantedBy=timers.target
