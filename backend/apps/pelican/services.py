@@ -6,6 +6,7 @@ from django.utils import timezone
 
 from apps.auth.models import UserProfile
 from apps.orders.models import Order
+from .configuration import PelicanConfigurationError, validate_pelican_configuration
 from .client import PelicanAPIError, PelicanClient
 from .models import PelicanAccount, PelicanServer
 
@@ -96,48 +97,16 @@ def _server_payload(record):
     except PelicanAccount.DoesNotExist:
         raise PelicanAPIError("pelican_account_not_linked") from None
 
-    config = item.resource_limits
-    if not isinstance(config, dict):
-        raise PelicanAPIError("invalid_plan_resources")
-    config = config.get("pelican")
-    if not isinstance(config, dict):
-        raise PelicanAPIError("pelican_config_missing")
+    try:
+        config = validate_pelican_configuration(item.resource_limits)
+    except PelicanConfigurationError as exc:
+        raise PelicanAPIError(exc.code) from None
 
-    for key in ("egg_id", "allocation_id"):
-        if type(config.get(key)) is not int or config[key] < 1:
-            raise PelicanAPIError(f"invalid_{key}")
-    limits = config.get("limits")
-    feature_limits = config.get("feature_limits")
+    limits = config["limits"]
+    feature_limits = config["feature_limits"]
     environment = config.get("environment", {})
-    if not isinstance(limits, dict) or not isinstance(feature_limits, dict) or not isinstance(environment, dict):
-        raise PelicanAPIError("invalid_plan_resources")
-
     required_limits = ("memory", "swap", "disk", "io", "cpu")
     required_features = ("databases", "allocations", "backups")
-    if any(type(limits.get(key)) is not int for key in required_limits):
-        raise PelicanAPIError("invalid_resource_limits")
-    if any(type(feature_limits.get(key)) is not int for key in required_features):
-        raise PelicanAPIError("invalid_feature_limits")
-    # Pelican explicitly accepts I/O values from 0 through 1000.
-    if (limits["memory"] < 0 or limits["disk"] < 0 or limits["swap"] < -1
-            or not 0 <= limits["io"] <= 1000 or limits["cpu"] < 0):
-        raise PelicanAPIError("invalid_resource_limits")
-    if any(feature_limits[key] < 0 for key in required_features):
-        raise PelicanAPIError("invalid_feature_limits")
-    if "threads" in limits and limits["threads"] is not None and not isinstance(limits["threads"], str):
-        raise PelicanAPIError("invalid_resource_limits")
-    if any(not isinstance(key, str) or not key
-           or not isinstance(value, (str, int, float, bool))
-           for key, value in environment.items()):
-        raise PelicanAPIError("invalid_environment")
-
-    for flag in ("skip_scripts", "oom_disabled", "start_on_completion"):
-        if flag in config and type(config[flag]) is not bool:
-            raise PelicanAPIError("invalid_egg_configuration")
-    docker_image = config.get("docker_image")
-    startup = config.get("startup")
-    if not isinstance(docker_image, str) or not docker_image.strip() or not isinstance(startup, str) or not startup.strip():
-        raise PelicanAPIError("invalid_egg_configuration")
 
     label = f"{item.product_name} {item.plan_name}".strip()[:150]
     unit_label = f" #{record.quantity_index}" if item.quantity > 1 else ""

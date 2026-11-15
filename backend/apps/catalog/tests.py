@@ -1,6 +1,7 @@
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
 from django.contrib.contenttypes.models import ContentType
+from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
 from django.test import TestCase
 from django.urls import reverse
@@ -66,6 +67,59 @@ class HostingCatalogModelTests(TestCase):
             resource_limits=["not", "an", "object"],
         )
         with self.assertRaisesMessage(Exception, "JSON-Objekt"):
+            plan.full_clean()
+
+    def test_pelican_configuration_is_validated_when_plan_is_saved(self):
+        valid_config = {
+            "pelican": {
+                "egg_id": 4,
+                "allocation_id": 91,
+                "docker_image": "ghcr.io/pelican/yolks:java_21",
+                "startup": "java -jar server.jar",
+                "environment": {"SERVER_JARFILE": "server.jar"},
+                "limits": {
+                    "memory": 4096,
+                    "swap": 0,
+                    "disk": 10240,
+                    "io": 0,
+                    "cpu": 200,
+                },
+                "feature_limits": {"databases": 1, "allocations": 1, "backups": 2},
+            }
+        }
+        plan = HostingPlan(
+            product=self.product,
+            name="Pelican Standard",
+            slug="pelican-standard",
+            price_cents=999,
+            resource_limits=valid_config,
+        )
+        plan.full_clean()
+
+        plan.resource_limits["pelican"]["egg_id"] = "4"
+        with self.assertRaisesMessage(ValidationError, "Egg-ID"):
+            plan.full_clean()
+
+    def test_pelican_configuration_rejects_invalid_io_range(self):
+        plan = HostingPlan(
+            product=self.product,
+            name="Invalid Pelican",
+            slug="invalid-pelican",
+            price_cents=100,
+            resource_limits={
+                "pelican": {
+                    "egg_id": 4,
+                    "allocation_id": 91,
+                    "docker_image": "image",
+                    "startup": "start",
+                    "limits": {
+                        "memory": 1024, "swap": 0, "disk": 1024, "io": 1001, "cpu": 100
+                    },
+                    "feature_limits": {"databases": 0, "allocations": 1, "backups": 0},
+                }
+            },
+        )
+        with self.assertRaisesMessage(ValidationError, "Ressourcenlimits"):
             plan.full_clean()
 
     def test_database_rejects_negative_plan_price(self):

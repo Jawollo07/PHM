@@ -117,6 +117,23 @@ class PelicanServerProvisioningTests(PelicanServerProvisioningFixture, TestCase)
         self.assertEqual(record.status, PelicanServer.Status.INSTALLING)
         self.assertEqual(client.payloads[0]["limits"]["io"], 0)
 
+    def test_invalid_catalog_configuration_fails_closed_before_server_creation(self):
+        self.item.resource_limits = {
+            **self.item.resource_limits,
+            "pelican": {
+                **self.item.resource_limits["pelican"],
+                "egg_id": True,
+            },
+        }
+        self.item.save(update_fields=["resource_limits"])
+        client = FakeProvisioningClient()
+
+        record = sync_pelican_server(self.record.pk, client=client)
+
+        self.assertEqual(record.status, PelicanServer.Status.FAILED)
+        self.assertEqual(record.last_error_code, "invalid_egg_id")
+        self.assertEqual(client.payloads, [])
+
     def test_quantity_creates_one_durable_record_per_server_unit(self):
         order, item = self.make_order(quantity=3, key="three-server-order")
         records = enqueue_order_provisioning(order.pk)

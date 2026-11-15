@@ -187,7 +187,7 @@ These are deployment templates only. They are not activated on a server by commi
 
 Set `PELICAN_PANEL_URL` to the HTTPS base URL of the panel and `PELICAN_APPLICATION_API_TOKEN` to a restricted Application API token in the deployment environment file. Optional `PELICAN_API_TIMEOUT` defaults to 10 seconds. Never commit API tokens.
 
-Each hosting plan stores a `pelican` object inside its immutable `resource_limits` snapshot. It must define `egg_id`, `allocation_id`, `docker_image`, `startup`, `environment`, `limits` (memory, swap, disk, io and cpu) and `feature_limits` (databases, allocations and backups). Pelican accepts I/O values from 0 to 1000. The allocation selects the node. For example:
+Each hosting plan stores a `pelican` object inside its immutable `resource_limits` snapshot. The catalog admin validates this object when a plan is saved, and provisioning repeats the same validation against the immutable order snapshot. Invalid egg/allocation IDs, resource limits, feature limits, environment values, Docker images or startup commands are rejected before a server is created. It must define `egg_id`, `allocation_id`, `docker_image`, `startup`, `environment`, `limits` (memory, swap, disk, io and cpu) and `feature_limits` (databases, allocations and backups). Pelican accepts I/O values from 0 to 1000. The allocation selects the node. For example:
 
 ```json
 {
