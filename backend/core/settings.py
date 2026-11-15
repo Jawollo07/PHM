@@ -12,6 +12,7 @@ https://docs.djangoproject.com/en/6.1/ref/settings/
 
 import os
 from pathlib import Path
+from django.core.exceptions import ImproperlyConfigured
 from django.core.management.utils import get_random_secret_key
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -22,12 +23,31 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/6.1/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY') or get_random_secret_key()
+def env_bool(name, default=False):
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
 
-# SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = os.environ.get('DJANGO_DEBUG', 'true').lower() == 'true'
 
-ALLOWED_HOSTS = [host.strip() for host in os.environ.get('DJANGO_ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',') if host.strip()]
+# Development remains convenient; production must provide an explicit secret.
+DEBUG = env_bool("DJANGO_DEBUG", True)
+SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "").strip()
+if not SECRET_KEY:
+    if not DEBUG:
+        raise ImproperlyConfigured("DJANGO_SECRET_KEY must be set when DJANGO_DEBUG is false.")
+    SECRET_KEY = get_random_secret_key()
+
+ALLOWED_HOSTS = [
+    host.strip()
+    for host in os.environ.get("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")
+    if host.strip()
+]
+CSRF_TRUSTED_ORIGINS = [
+    origin.strip()
+    for origin in os.environ.get("DJANGO_CSRF_TRUSTED_ORIGINS", "").split(",")
+    if origin.strip()
+]
 
 
 # Application definition
@@ -131,8 +151,28 @@ STATIC_URL = 'static/'
 # Email
 # https://docs.djangoproject.com/en/6.1/topics/email/#topic-email-configuration
 
-EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
-EMAIL_TIMEOUT = int(os.environ.get('EMAIL_TIMEOUT', '10'))
+EMAIL_TIMEOUT = int(os.environ.get("EMAIL_TIMEOUT", "10"))
+EMAIL_HOST = os.environ.get("EMAIL_HOST", "").strip()
+EMAIL_USE_TLS = env_bool("EMAIL_USE_TLS", False)
+EMAIL_USE_SSL = env_bool("EMAIL_USE_SSL", False)
+if EMAIL_USE_TLS and EMAIL_USE_SSL:
+    raise ImproperlyConfigured("EMAIL_USE_TLS and EMAIL_USE_SSL cannot both be enabled.")
+EMAIL_PORT = int(os.environ.get("EMAIL_PORT", "465" if EMAIL_USE_SSL else "587"))
+EMAIL_HOST_USER = os.environ.get("EMAIL_HOST_USER", "").strip()
+EMAIL_HOST_PASSWORD = os.environ.get("EMAIL_HOST_PASSWORD", "")
+DEFAULT_FROM_EMAIL = os.environ.get(
+    "DEFAULT_FROM_EMAIL", EMAIL_HOST_USER or "noreply@localhost"
+).strip()
+# Keep the old DJANGO_EMAIL_BACKEND setting working for existing deployments/CI.
+EMAIL_BACKEND = (
+    os.environ.get("EMAIL_BACKEND")
+    or os.environ.get("DJANGO_EMAIL_BACKEND")
+    or (
+        "django.core.mail.backends.smtp.EmailBackend"
+        if EMAIL_HOST
+        else "django.core.mail.backends.console.EmailBackend"
+    )
+)
 
 # Dotted import path to an external Ed25519 signing adapter callable(payload: bytes) -> bytes.
 # Prefer a protected PEM file; legacy private-key environment variables remain supported.
@@ -154,10 +194,4 @@ WALLET_LEDGER_AUTO_CHECKPOINT = os.environ.get(
 PELICAN_PANEL_URL = os.environ.get("PELICAN_PANEL_URL", "").rstrip("/")
 PELICAN_APPLICATION_API_TOKEN = os.environ.get("PELICAN_APPLICATION_API_TOKEN", "")
 PELICAN_API_TIMEOUT = int(os.environ.get("PELICAN_API_TIMEOUT", "10"))
-EMAIL_HOST = os.environ.get('EMAIL_HOST', 'mail.com')
-EMAIL_PORT = os.environ.get('EMAIL_PORT', '465')
-EMAIL_USE_TLS = os.environ.get('EMAIL_USE_TLS', False)
-EMAIL_USE_SSL = os.environ.get('EMAIL_USE_SSL', True)
-EMAIL_HOST_USER = os.environ.get('EMAIL_HOST_USER', 'test@mail.com')
-EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD', 'SuperSecurePassword123!')
-DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
+

@@ -155,22 +155,55 @@ class RegistrationAndEmailVerificationTests(TestCase):
     def tearDown(self):
         self.email_backend.disable()
 
+    def _login_as_staff(self):
+        staff = User.objects.create_user(
+            username="mail-admin",
+            email="mail-admin@example.com",
+            password="secure-test-password",
+            is_staff=True,
+            email_verified=True,
+        )
+        self.client.force_login(staff)
+
     @patch("apps.auth.email.send_mail")
     def test_test_email_endpoint_renders_success_page(self, send_mail_mock):
         from django.urls import reverse
 
-        response = self.client.get(reverse("test_mail"))
+        self._login_as_staff()
+        response = self.client.post(reverse("test_mail"))
 
         self.assertEqual(response.status_code, 200)
         self.assertTemplateUsed(response, "auth/test_email.html")
         self.assertContains(response, "Die Test-E-Mail wurde erfolgreich versendet.")
         send_mail_mock.assert_called_once()
 
+    def test_test_email_endpoint_rejects_get_requests(self):
+        from django.urls import reverse
+
+        self._login_as_staff()
+        response = self.client.get(reverse("test_mail"))
+        self.assertEqual(response.status_code, 405)
+
+    def test_test_email_endpoint_requires_staff(self):
+        from django.urls import reverse
+
+        customer = User.objects.create_user(
+            username="mail-customer",
+            email="mail-customer@example.com",
+            password="secure-test-password",
+            email_verified=True,
+        )
+        self.client.force_login(customer)
+        response = self.client.post(reverse("test_mail"))
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("/auth/", response.url)
+
     @patch("apps.auth.email.send_mail", side_effect=OSError("SMTP unavailable"))
     def test_test_email_endpoint_renders_error_page(self, _send_mail_mock):
         from django.urls import reverse
 
-        response = self.client.get(reverse("test_mail"))
+        self._login_as_staff()
+        response = self.client.post(reverse("test_mail"))
 
         self.assertEqual(response.status_code, 500)
         self.assertTemplateUsed(response, "auth/test_email.html")
@@ -203,7 +236,7 @@ class RegistrationAndEmailVerificationTests(TestCase):
         self.assertTrue(hasattr(user, "customer"))
         self.assertTrue(Wallet.objects.filter(customer=user.customer).exists())
         self.assertEqual(len(mail.outbox), 1)
-        self.assertEqual(mail.outbox[0].from_email, settings.EMAIL_HOST_USER)
+        self.assertEqual(mail.outbox[0].from_email, settings.DEFAULT_FROM_EMAIL)
 
         token = re.search(r"/auth/verify/([^/]+)", mail.outbox[0].body).group(1)
         verification = EmailVerification.objects.get(user=user)

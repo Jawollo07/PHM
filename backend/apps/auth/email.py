@@ -16,9 +16,11 @@ def test_mail(request=None):
         if user_email:
             recipient = user_email
     if not recipient:
-        recipient = (
-            getattr(settings, "DEFAULT_FROM_EMAIL", None)
-            or getattr(settings, "EMAIL_HOST_USER", None)
+        return render(
+            request,
+            "auth/test_email.html",
+            {"success": False, "message": "Es ist kein Empfänger für die Test-E-Mail konfiguriert."},
+            status=400,
         )
 
     try:

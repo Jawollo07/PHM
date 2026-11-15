@@ -5,12 +5,14 @@ import smtplib
 from django.contrib import messages
 from django.contrib.auth import authenticate, login as auth_login, logout
 from django.contrib.auth.decorators import login_required
+from django.contrib.admin.views.decorators import staff_member_required
 from django.contrib.auth.views import PasswordChangeView, PasswordResetConfirmView
 from django.db import IntegrityError, transaction
 from django.http import HttpResponse, HttpResponseNotAllowed
 from django.shortcuts import redirect, render
 from django.urls import reverse_lazy
 from django.utils import timezone
+from django.views.decorators.http import require_POST
 
 from apps.customers.models import Customer
 
@@ -135,7 +137,10 @@ def verify_email(request, token):
         status=200 if success else 400,
     )
 
+@staff_member_required(login_url="auth")
+@require_POST
 def test_mail(request):
+    """Send a test message only on an explicit POST by staff members."""
     return send_test_email(request)
 
 
