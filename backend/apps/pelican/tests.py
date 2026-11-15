@@ -100,3 +100,94 @@ class PelicanPasswordAPIClientTests(SimpleTestCase):
         self.assertEqual(payload["password"], "New-Strong-Password-2026!")
         self.assertEqual(payload["email"], "customer@example.com")
 
+
+
+
+class PelicanServerAPIClientTests(SimpleTestCase):
+    @override_settings(
+        PELICAN_PANEL_URL="https://panel.example.com",
+        PELICAN_APPLICATION_API_TOKEN="test-token",
+    )
+    def test_find_server_by_external_id_uses_dedicated_endpoint(self):
+        from unittest.mock import patch
+
+        client = PelicanClient()
+        remote = {"id": 12, "external_id": "phm-order-item/42"}
+        with patch.object(client, "_request", return_value={"attributes": remote}) as request:
+            result = client.find_server_by_external_id("phm-order-item/42")
+        self.assertEqual(result, remote)
+        request.assert_called_once_with("GET", "servers/external/phm-order-item%2F42")
+
+    @override_settings(
+        PELICAN_PANEL_URL="https://panel.example.com",
+        PELICAN_APPLICATION_API_TOKEN="test-token",
+    )
+    def test_find_server_returns_none_only_for_not_found(self):
+        from unittest.mock import patch
+
+        client = PelicanClient()
+        with patch.object(client, "_request", side_effect=PelicanAPIError("http_404")):
+            self.assertIsNone(client.find_server_by_external_id("phm-order-item-42"))
+        with patch.object(client, "_request", side_effect=PelicanAPIError("http_503")):
+            with self.assertRaises(PelicanAPIError) as raised:
+                client.find_server_by_external_id("phm-order-item-42")
+        self.assertEqual(raised.exception.code, "http_503")
+
+    @override_settings(
+        PELICAN_PANEL_URL="https://panel.example.com",
+        PELICAN_APPLICATION_API_TOKEN="test-token",
+    )
+    def test_create_server_posts_payload_and_normalizes_attributes(self):
+        from unittest.mock import patch
+
+        client = PelicanClient()
+        payload = {"external_id": "phm-order-item-42", "name": "Minecraft", "user": 5}
+        remote = {"id": 12, **payload}
+        with patch.object(client, "_request", return_value={"attributes": remote}) as request:
+            result = client.create_server(payload)
+        self.assertEqual(result, remote)
+        request.assert_called_once_with("POST", "servers", payload)
+
+    @override_settings(
+        PELICAN_PANEL_URL="https://panel.example.com",
+        PELICAN_APPLICATION_API_TOKEN="test-token",
+    )
+    def test_create_server_rejects_mismatched_external_id(self):
+        from unittest.mock import patch
+
+        client = PelicanClient()
+        with patch.object(client, "_request", return_value={
+            "attributes": {"id": 12, "external_id": "different-server"}
+        }):
+            with self.assertRaises(PelicanAPIError) as raised:
+                client.create_server({"external_id": "expected-server"})
+        self.assertEqual(raised.exception.code, "server_identity_mismatch")
+
+    @override_settings(
+        PELICAN_PANEL_URL="https://panel.example.com",
+        PELICAN_APPLICATION_API_TOKEN="test-token",
+    )
+    def test_get_server_validates_id_and_response_identity(self):
+        from unittest.mock import patch
+
+        client = PelicanClient()
+        remote = {"id": 12, "external_id": "phm-order-item-42"}
+        with patch.object(client, "_request", return_value={"attributes": remote}) as request:
+            self.assertEqual(client.get_server(12), remote)
+        request.assert_called_once_with("GET", "servers/12")
+        with self.assertRaises(PelicanAPIError) as raised:
+            client.get_server(True)
+        self.assertEqual(raised.exception.code, "invalid_server_id")
+
+    @override_settings(
+        PELICAN_PANEL_URL="https://panel.example.com",
+        PELICAN_APPLICATION_API_TOKEN="test-token",
+    )
+    def test_server_methods_reject_malformed_api_envelopes(self):
+        from unittest.mock import patch
+
+        client = PelicanClient()
+        with patch.object(client, "_request", return_value={"data": []}):
+            with self.assertRaises(PelicanAPIError) as raised:
+                client.get_server(12)
+        self.assertEqual(raised.exception.code, "invalid_server_response")

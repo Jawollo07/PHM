@@ -96,3 +96,57 @@ class PelicanClient:
         if not created.get("id") or created.get("email", "").casefold() != email.casefold():
             raise PelicanAPIError("create_response_mismatch")
         return created, True
+
+
+    @staticmethod
+    def _server_attributes(response):
+        if not isinstance(response, dict):
+            raise PelicanAPIError("invalid_server_response")
+        attributes = response.get("attributes")
+        if not isinstance(attributes, dict):
+            raise PelicanAPIError("invalid_server_response")
+        server_id = attributes.get("id")
+        external_id = attributes.get("external_id")
+        if type(server_id) is not int or server_id < 1:
+            raise PelicanAPIError("invalid_server_response")
+        if external_id is not None and not isinstance(external_id, str):
+            raise PelicanAPIError("invalid_server_response")
+        return attributes
+
+    def find_server_by_external_id(self, external_id):
+        """Return server attributes, or None only when Pelican returns HTTP 404."""
+        from urllib.parse import quote
+
+        if not isinstance(external_id, str) or not external_id or len(external_id) > 255:
+            raise PelicanAPIError("invalid_external_id")
+        path_id = quote(external_id, safe="")
+        try:
+            response = self._request("GET", f"servers/external/{path_id}")
+        except PelicanAPIError as exc:
+            if exc.code == "http_404":
+                return None
+            raise
+        return self._server_attributes(response)
+
+    def create_server(self, payload):
+        """Create a server and return its normalized Pelican attributes."""
+        if not isinstance(payload, dict):
+            raise PelicanAPIError("invalid_server_payload")
+        external_id = payload.get("external_id")
+        if not isinstance(external_id, str) or not external_id or len(external_id) > 255:
+            raise PelicanAPIError("invalid_external_id")
+        response = self._request("POST", "servers", payload)
+        attributes = self._server_attributes(response)
+        if attributes.get("external_id") != external_id:
+            raise PelicanAPIError("server_identity_mismatch")
+        return attributes
+
+    def get_server(self, panel_server_id):
+        """Fetch a server by its numeric Pelican ID and return its attributes."""
+        if type(panel_server_id) is not int or panel_server_id < 1:
+            raise PelicanAPIError("invalid_server_id")
+        response = self._request("GET", f"servers/{panel_server_id}")
+        attributes = self._server_attributes(response)
+        if attributes["id"] != panel_server_id:
+            raise PelicanAPIError("server_identity_mismatch")
+        return attributes
