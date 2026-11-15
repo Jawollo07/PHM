@@ -65,7 +65,7 @@ class WalletModelTests(TestCase):
             with connection.cursor() as cursor:
                 cursor.execute(
                     "UPDATE wallets SET balance_cents = -1 WHERE id = %s",
-                    [str(self.wallet.pk)],
+                    [self.wallet.pk.hex],
                 )
 
     def test_transaction_cannot_be_updated_or_deleted(self):
@@ -103,13 +103,13 @@ class WalletModelTests(TestCase):
             with connection.cursor() as cursor:
                 cursor.execute(
                     "UPDATE wallet_transactions SET description = %s WHERE id = %s",
-                    ["Raw SQL tampering", str(entry.pk)],
+                    ["Raw SQL tampering", entry.pk.hex],
                 )
         with self.assertRaises(DatabaseError), transaction.atomic():
             with connection.cursor() as cursor:
                 cursor.execute(
                     "DELETE FROM wallet_transactions WHERE id = %s",
-                    [str(entry.pk)],
+                    [entry.pk.hex],
                 )
 
 
@@ -801,13 +801,21 @@ class ManualWalletAdjustmentAdminTests(TestCase):
     def test_capture_uses_its_own_reserved_funds_without_spending_other_holds(self):
         from apps.wallet.services import capture_hold, credit_wallet, place_hold
 
+        key = LedgerSigningKey.objects.create(
+            key_id="wallet-admin-capture-test-key",
+            label="Wallet admin capture test key",
+            public_key=b"wallet-admin-capture-public-key",
+            fingerprint="f" * 64,
+            status=LedgerSigningKey.Status.ACTIVE,
+        )
+        signer = lambda payload: b"wallet-admin-capture-test-signature"
         credit_wallet(
             self.wallet.pk,
             10000,
             description="Multiple hold funding",
             idempotency_key="multiple-hold-funding",
-            signing_key_id=self.key.pk,
-            signer=self.signer,
+            signing_key_id=key.pk,
+            signer=signer,
         )
         first = place_hold(
             self.wallet.pk,
@@ -822,8 +830,8 @@ class ManualWalletAdjustmentAdminTests(TestCase):
 
         entry = capture_hold(
             first.pk,
-            signing_key_id=self.key.pk,
-            signer=self.signer,
+            signing_key_id=key.pk,
+            signer=signer,
         )
         self.wallet.refresh_from_db()
         second.refresh_from_db()

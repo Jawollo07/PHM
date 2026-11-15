@@ -70,13 +70,17 @@ def create_subscription_for_order_item(order_item_id):
         item.billing_interval_unit,
         item.billing_interval_count,
     )
+    recurring_price_cents = item.unit_price_cents * item.quantity
+    if recurring_price_cents > 9_223_372_036_854_775_807:
+        raise SubscriptionError("The recurring subscription price exceeds the supported EUR-cent range.")
+
     return Subscription.objects.create(
         customer=item.order.customer,
         order_item=item,
         plan=item.plan,
         status=Subscription.Status.ACTIVE,
         currency="EUR",
-        price_cents=item.unit_price_cents,
+        price_cents=recurring_price_cents,
         billing_interval_unit=item.billing_interval_unit,
         billing_interval_count=item.billing_interval_count,
         billing_anchor_day=start.day,

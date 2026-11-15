@@ -69,9 +69,10 @@ def _post_locked(
     if not idempotency_key or len(idempotency_key) > 128:
         raise InvalidLedgerOperation("A valid idempotency key is required.")
 
-    if not isinstance(metadata, dict):
+    if metadata is None:
+        metadata = {}
+    elif not isinstance(metadata, dict):
         raise InvalidLedgerOperation("Transaction metadata must be an object.")
-    metadata = metadata or {}
     existing = WalletTransaction.objects.filter(wallet=wallet, idempotency_key=idempotency_key).first()
     if existing:
         same_request = (

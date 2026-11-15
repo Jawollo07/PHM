@@ -7,6 +7,7 @@ from apps.auth.forms import VerifiedPasswordResetForm
 from apps.auth.views import auth_view, login, log_out, register, site, verify_email
 from apps.customers.views import account_view
 from apps.orders.views import catalog_view, order_detail_view, orders_view, purchase_plan_view
+from apps.pelican.views import servers_view
 from apps.subscriptions.views import subscription_action_view, subscriptions_view
 
 urlpatterns = [
@@ -55,6 +56,7 @@ urlpatterns = [
     path("catalog/", catalog_view, name="catalog"),
     path("catalog/plans/<int:plan_id>/purchase/", purchase_plan_view, name="purchase_plan"),
     path("orders/", orders_view, name="orders"),
+    path("servers/", servers_view, name="pelican_servers"),
     path("orders/<uuid:order_id>/", order_detail_view, name="order_detail"),
     path("subscriptions/", subscriptions_view, name="subscriptions"),
     path("subscriptions/<uuid:subscription_id>/settings/", subscription_action_view, name="subscription_action"),
