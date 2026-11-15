@@ -1,6 +1,7 @@
 from django.db import transaction
 from django.utils import timezone
 
+from apps.auth.services import notify_order_confirmation, notify_order_payment_failed
 from apps.catalog.models import HostingPlan
 from apps.customers.models import Customer
 from apps.wallet.models import Wallet
@@ -100,6 +101,9 @@ def place_order(
         resource_limits=plan.resource_limits,
     )
 
+    if is_free:
+        notify_order_confirmation(order.pk)
+
     if not is_free:
         wallet = Wallet.objects.select_for_update().get(customer=customer)
         hold = place_hold(
@@ -133,6 +137,7 @@ def confirm_order_payment(order_id, *, signing_key_id, signer) -> Order:
     if entry is None:
         order.status = Order.Status.FAILED
         order.save(update_fields=["status", "updated_at"])
+        notify_order_payment_failed(order.pk)
         return order
 
     order.status = Order.Status.PAID
@@ -140,6 +145,7 @@ def confirm_order_payment(order_id, *, signing_key_id, signer) -> Order:
     order.paid_at = timezone.now()
     order.save(update_fields=["status", "paid_transaction", "paid_at", "updated_at"])
     _ensure_order_subscriptions(order)
+    notify_order_confirmation(order.pk)
     return order
 
 

@@ -13,6 +13,7 @@ from django.utils import timezone
 from django.utils.module_loading import import_string
 
 from apps.catalog.models import HostingPlan, HostingProduct
+from apps.auth.services import notify_wallet_payment_failed
 from apps.wallet.models import LedgerSigningKey
 from apps.wallet.services import InsufficientFunds
 
@@ -111,6 +112,7 @@ def purchase_plan_view(request, plan_id):
         messages.error(request, "Diese Bestellkennung wurde bereits für eine andere Bestellung verwendet.")
         return redirect("catalog")
     except InsufficientFunds:
+        notify_wallet_payment_failed(request.user.pk)
         messages.error(request, "Dein verfügbares Guthaben reicht für diesen Tarif nicht aus. Bitte wende dich an den Support, wenn eine manuelle Gutschrift benötigt wird.")
         return redirect("catalog")
     except OrderNotPayable as exc:

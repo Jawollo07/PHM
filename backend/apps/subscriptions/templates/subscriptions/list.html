@@ -20,10 +20,16 @@ button.secondary{background:#e2e8f0;color:#172033}.notice{padding:.75rem 1rem;ba
 <article class="subscription">
     <h2>{{ subscription.plan.name }}</h2>
     <p>Status: <strong>{{ subscription.get_status_display }}</strong></p>
-    <p>Preis: {{ subscription.price_eur|floatformat:2 }} EUR je
+    <p>Verlängerungskosten: {{ subscription.price_eur|floatformat:2 }} EUR je
         {{ subscription.billing_interval_count }} {{ subscription.get_billing_interval_unit_display }}</p>
-    <p>Aktueller Zeitraum: {{ subscription.current_period_start|date:"d.m.Y" }} – {{ subscription.current_period_end|date:"d.m.Y" }}</p>
-    <p>Nächste Fälligkeit: {{ subscription.next_billing_at|date:"d.m.Y H:i" }}</p>
+    <p>Laufzeit: {{ subscription.current_period_start|date:"d.m.Y" }} – {{ subscription.current_period_end|date:"d.m.Y" }}</p>
+    {% if subscription.cancel_at_period_end %}
+    <p>Ende des Zeitraums: {{ subscription.current_period_end|date:"d.m.Y" }} · keine weitere Abbuchung geplant.</p>
+    {% elif subscription.auto_renew %}
+    <p>Nächste Abbuchung: {{ subscription.next_billing_at|date:"d.m.Y H:i" }} · {{ subscription.price_eur|floatformat:2 }} EUR</p>
+    {% else %}
+    <p>Leistungsende: {{ subscription.current_period_end|date:"d.m.Y" }} · automatische Verlängerung deaktiviert.</p>
+    {% endif %}
     <p>Automatische Verlängerung: {% if subscription.auto_renew %}Aktiv{% else %}Deaktiviert{% endif %}</p>
     {% if subscription.cancel_at_period_end %}<p>Die Kündigung zum Periodenende ist vorgemerkt.</p>{% endif %}
     {% if subscription.status == "active" or subscription.status == "past_due" %}

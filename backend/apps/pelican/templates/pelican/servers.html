@@ -17,6 +17,8 @@
     .pill{display:inline-block;padding:.35rem .65rem;border-radius:999px;background:#eef2f8;color:#526078;font-size:.8rem}
     .action{display:inline-block;margin-top:.8rem;padding:.65rem .9rem;border-radius:8px;background:#3156a5;color:#fff;text-decoration:none;font-weight:650}
     .empty{padding:1.5rem;background:#fff;border:1px solid #e2e8f0;border-radius:14px;color:#647189}
+    .resources{display:flex;flex-wrap:wrap;gap:.45rem;margin:1rem 0}
+    .resource{padding:.35rem .55rem;border-radius:7px;background:#eef2f8;color:#526078;font-size:.82rem}
   </style>
 </head>
 <body>
@@ -32,10 +34,20 @@
     <article class="server">
       <div class="row">
         <h2>{{ server.panel_name|default:server.order_item.plan_name }}{% if server.order_item.quantity > 1 %} · Instanz {{ server.quantity_index }}{% endif %}</h2>
-        <span class="pill status">{{ server.get_status_display }}</span>
+        <span class="pill status">{{ server.customer_status_display }}</span>
       </div>
       <p class="muted">Bestellung {{ server.order_item.order_id }} · Angelegt {{ server.created_at|date:"d.m.Y H:i" }}</p>
       {% if server.panel_server_id %}<p class="muted">Pelican-ID: {{ server.panel_server_id }} · Kennung: {{ server.panel_identifier }}</p>{% endif %}
+      {% if server.provisioned_at %}<p class="muted">Bereitstellung gestartet: {{ server.provisioned_at|date:"d.m.Y H:i" }}</p>{% endif %}
+      {% if server.installed_at %}<p class="muted">Installation abgeschlossen: {{ server.installed_at|date:"d.m.Y H:i" }}</p>{% endif %}
+      {% if server.resource_details %}
+        <h3>Tariflimits</h3>
+        <div class="resources">
+          {% for resource in server.resource_details %}
+            <span class="resource">{{ resource.label }}: {{ resource.value }}</span>
+          {% endfor %}
+        </div>
+      {% endif %}
       {% if server.status == "failed" %}
         <p class="muted">Die Bereitstellung wird automatisch erneut versucht. Fehlercode: {{ server.last_error_code|default:"unbekannt" }}</p>
       {% elif server.status == "installing" %}

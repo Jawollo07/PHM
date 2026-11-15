@@ -131,11 +131,8 @@ STATIC_URL = 'static/'
 # Email
 # https://docs.djangoproject.com/en/6.1/topics/email/#topic-email-configuration
 
-EMAIL_BACKEND = os.environ.get(
-    'DJANGO_EMAIL_BACKEND',
-    'django.core.mail.backends.console.EmailBackend',
-)
-DEFAULT_FROM_EMAIL = os.environ.get('DJANGO_DEFAULT_FROM_EMAIL', 'noreply@localhost')
+EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+EMAIL_TIMEOUT = int(os.environ.get('EMAIL_TIMEOUT', '10'))
 
 # Dotted import path to an external Ed25519 signing adapter callable(payload: bytes) -> bytes.
 # Prefer a protected PEM file; legacy private-key environment variables remain supported.
@@ -157,3 +154,10 @@ WALLET_LEDGER_AUTO_CHECKPOINT = os.environ.get(
 PELICAN_PANEL_URL = os.environ.get("PELICAN_PANEL_URL", "").rstrip("/")
 PELICAN_APPLICATION_API_TOKEN = os.environ.get("PELICAN_APPLICATION_API_TOKEN", "")
 PELICAN_API_TIMEOUT = int(os.environ.get("PELICAN_API_TIMEOUT", "10"))
+EMAIL_HOST = os.environ.get('EMAIL_HOST', 'mail.com')
+EMAIL_PORT = os.environ.get('EMAIL_PORT', '465')
+EMAIL_USE_TLS = os.environ.get('EMAIL_USE_TLS', False)
+EMAIL_USE_SSL = os.environ.get('EMAIL_USE_SSL', True)
+EMAIL_HOST_USER = os.environ.get('EMAIL_HOST_USER', 'test@mail.com')
+EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD', 'SuperSecurePassword123!')
+DEFAULT_FROM_EMAIL = EMAIL_HOST_USER

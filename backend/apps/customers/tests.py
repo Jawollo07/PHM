@@ -91,6 +91,101 @@ class AccountViewTests(TestCase):
         self.assertNotContains(response, "Fremde Buchung")
         self.assertNotContains(response, "99,00 EUR")
 
+    def test_account_overview_shows_owned_orders_subscriptions_billing_and_servers(self):
+        from django.urls import reverse
+
+        from apps.catalog.models import HostingPlan, HostingProduct
+        from apps.orders.services import confirm_order_payment, place_order
+        from apps.pelican.models import PelicanServer
+        from apps.subscriptions.services import create_subscription_for_order_item
+
+        key = LedgerSigningKey.objects.create(
+            key_id="account-overview-key",
+            label="Account overview test key",
+            public_key=b"account-overview-public-key",
+            fingerprint="a" * 64,
+        )
+        adjust_wallet_balance(
+            self.user.customer.wallet.pk,
+            5000,
+            description="Übersichts-Testguthaben",
+            idempotency_key="account-overview-credit",
+            signing_key_id=key.pk,
+            signer=lambda payload: b"account-overview-signature",
+        )
+        product = HostingProduct.objects.create(
+            name="Übersicht Hosting",
+            slug="overview-hosting",
+            is_active=True,
+        )
+        plan = HostingPlan.objects.create(
+            product=product,
+            name="Übersicht Tarif",
+            slug="overview-plan",
+            price_cents=1200,
+            billing_interval_unit=HostingPlan.IntervalUnit.MONTH,
+            billing_interval_count=1,
+            resource_limits={
+                "pelican": {
+                    "limits": {
+                        "memory": 4096,
+                        "swap": 0,
+                        "disk": 20480,
+                        "io": 500,
+                        "cpu": 200,
+                    },
+                    "feature_limits": {
+                        "databases": 1,
+                        "allocations": 1,
+                        "backups": 2,
+                    },
+                },
+            },
+            is_active=True,
+        )
+        order = place_order(
+            self.user.customer.pk,
+            plan.pk,
+            idempotency_key="account-overview-order",
+        )
+        paid_order = confirm_order_payment(
+            order.pk,
+            signing_key_id=key.pk,
+            signer=lambda payload: b"account-overview-signature",
+        )
+        subscription = create_subscription_for_order_item(paid_order.items.get().pk)
+        subscription.auto_renew = True
+        subscription.save(update_fields=["auto_renew", "updated_at"])
+        PelicanServer.objects.create(
+            order_item=paid_order.items.get(),
+            quantity_index=1,
+            customer=self.user.customer,
+            external_id=f"account-overview-server-{paid_order.pk}",
+            panel_server_id=101,
+            panel_uuid="account-overview-panel-uuid",
+            panel_identifier="overview",
+            panel_name="Übersichtsserver",
+            status=PelicanServer.Status.INSTALLED,
+        )
+
+        response = self.client.get(reverse("account"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Bestellungen")
+        self.assertContains(response, "Abonnements")
+        self.assertContains(response, "Abrechnungen")
+        self.assertContains(response, "Verlängerung ausschalten")
+        self.assertContains(response, "Nächste Abbuchung")
+        self.assertContains(response, "Übersichtsserver")
+        self.assertContains(response, "Arbeitsspeicher: 4.096 MB")
+        self.assertContains(response, "Aboverlängerung")
+
+        server_response = self.client.get(reverse("pelican_servers"))
+        self.assertEqual(server_response.status_code, 200)
+        self.assertContains(server_response, "Tariflimits")
+        self.assertContains(server_response, "CPU-Limit: 200%")
+        self.assertContains(server_response, "Aktiv")
+
     def test_account_page_displays_customer_phone_number(self):
         customer = Customer.objects.get(user=self.user)
         customer.phone_number = '0123456789'

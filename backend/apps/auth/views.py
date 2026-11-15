@@ -1,21 +1,49 @@
 import hashlib
 import logging
+import smtplib
 
 from django.contrib import messages
 from django.contrib.auth import authenticate, login as auth_login, logout
 from django.contrib.auth.decorators import login_required
+from django.contrib.auth.views import PasswordChangeView, PasswordResetConfirmView
 from django.db import IntegrityError, transaction
 from django.http import HttpResponse, HttpResponseNotAllowed
 from django.shortcuts import redirect, render
+from django.urls import reverse_lazy
 from django.utils import timezone
 
 from apps.customers.models import Customer
 
+from .email import test_mail as send_test_email
 from .forms import RegistrationForm
 from .models import EmailVerification
-from .services import issue_email_verification
+from .password_forms import SynchronizedPasswordChangeForm, SynchronizedSetPasswordForm
+from .services import issue_email_verification, notify_password_changed
 
 logger = logging.getLogger(__name__)
+
+
+class NotifyingPasswordChangeView(PasswordChangeView):
+    form_class = SynchronizedPasswordChangeForm
+    template_name = "auth/password_change_form.html"
+    success_url = reverse_lazy("password_change_done")
+
+    def form_valid(self, form):
+        response = super().form_valid(form)
+        notify_password_changed(self.request.user.pk)
+        return response
+
+
+class NotifyingPasswordResetConfirmView(PasswordResetConfirmView):
+    form_class = SynchronizedSetPasswordForm
+    template_name = "auth/password_reset_confirm.html"
+    success_url = reverse_lazy("password_reset_complete")
+
+    def form_valid(self, form):
+        user_id = form.user.pk
+        response = super().form_valid(form)
+        notify_password_changed(user_id)
+        return response
 
 
 def auth_view(request):
@@ -39,6 +67,25 @@ def register(request):
                 )
         except IntegrityError:
             form.add_error(None, "Benutzername oder E-Mail-Adresse ist bereits vergeben.")
+        except smtplib.SMTPRecipientsRefused:
+            logger.warning(
+                "Email verification recipient refused for user_id=%s",
+                user.pk,
+            )
+            form.add_error(
+                "email",
+                "Diese E-Mail-Adresse wurde vom Mailserver abgelehnt. Bitte überprüfe die Adresse.",
+            )
+        except (smtplib.SMTPException, OSError) as exc:
+            logger.error(
+                "Email verification delivery failed for user_id=%s (%s)",
+                user.pk,
+                type(exc).__name__,
+            )
+            form.add_error(
+                None,
+                "Die Bestätigungs-E-Mail konnte nicht versendet werden. Bitte versuche es später erneut.",
+            )
         else:
             return render(request, "auth/registration_sent.html", {"email": user.email})
     return render(request, "auth/register.html", {"form": form})
@@ -87,6 +134,13 @@ def verify_email(request, token):
         {"success": success, "message": message},
         status=200 if success else 400,
     )
+
+def test_mail(request):
+    return send_test_email(request)
+
+
+def test_email(request):
+    return test_mail(request)
 
 
 def login(request):

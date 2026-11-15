@@ -1,6 +1,6 @@
-import pycountry
 from decimal import Decimal
 
+import pycountry
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.db import transaction
@@ -11,7 +11,11 @@ from apps.auth.services import issue_email_verification
 from apps.customers.forms import AccountDetailsForm
 from apps.customers.models import Customer, CustomerAddress, CustomerSettings
 from apps.customers.services import provision_personal_customer
-from apps.wallet.models import Wallet
+from apps.orders.models import Order
+from apps.pelican.models import PelicanServer
+from apps.pelican.presentation import server_resource_details, server_status_label
+from apps.subscriptions.models import Subscription
+from apps.wallet.models import Wallet, WalletTransaction
 
 
 def _format_eur(cents):
@@ -40,6 +44,67 @@ def get_wallet_details(user):
             }
             for entry in wallet.transactions.order_by("-sequence_number")[:10]
         ],
+    }
+
+
+def get_customer_overview(customer):
+    if customer is None:
+        return {
+            "orders": [],
+            "order_count": 0,
+            "subscriptions": [],
+            "subscription_count": 0,
+            "servers": [],
+            "server_count": 0,
+            "billing_entries": [],
+        }
+
+    orders = Order.objects.filter(customer=customer)
+    subscriptions = Subscription.objects.filter(customer=customer)
+    servers = list(
+        PelicanServer.objects.filter(customer=customer)
+        .select_related("order_item", "order_item__order")
+        .order_by("-created_at")[:4]
+    )
+    for server in servers:
+        server.resource_details = server_resource_details(
+            server.order_item.resource_limits
+        )
+        server.customer_status_display = server_status_label(server.status)
+
+    wallet = Wallet.objects.filter(customer=customer).first()
+    billing_entries = []
+    if wallet is not None:
+        billing_entries = [
+            {
+                "date": entry.created_at,
+                "description": entry.description,
+                "reference": entry.reference,
+                "amount": _format_eur(abs(entry.amount_cents)),
+                "kind": (
+                    "Aboverlängerung"
+                    if entry.metadata.get("source") == "subscription_renewal"
+                    else "Bestellung"
+                ),
+            }
+            for entry in wallet.transactions.filter(
+                type=WalletTransaction.Type.PURCHASE
+            ).order_by("-sequence_number")[:5]
+        ]
+
+    return {
+        "orders": list(
+            orders.prefetch_related("items").order_by("-created_at")[:4]
+        ),
+        "order_count": orders.count(),
+        "subscriptions": list(
+            subscriptions.select_related("plan", "order_item")
+            .order_by("-created_at")[:4]
+        ),
+        "subscription_count": subscriptions.count(),
+        "servers": servers,
+        "server_count": PelicanServer.objects.filter(customer=customer).count(),
+        "billing_entries": billing_entries,
     }
 
 
@@ -216,6 +281,7 @@ def account_view(request):
             "wallet_details": get_wallet_details(user),
             "customer_address": get_customer_address(user),
             "customer_settings": customer_settings_details,
+            "customer_overview": get_customer_overview(customer),
             "customer_notification_settings": (
                 customer_settings_details.get("notification_settings")
                 if customer_settings_details else None

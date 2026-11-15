@@ -4,6 +4,11 @@ from datetime import timedelta
 from django.db import transaction
 from django.utils import timezone
 
+from apps.auth.services import (
+    notify_subscription_expired,
+    notify_subscription_payment_failed,
+    notify_subscription_renewed,
+)
 from apps.catalog.models import HostingPlan
 from apps.customers.models import Customer
 from apps.orders.models import Order, OrderItem
@@ -180,6 +185,7 @@ def renew_subscription(
                 metadata={"source": "subscription_renewal", "subscription_id": str(subscription.pk)},
             )
         except InsufficientFunds:
+            was_past_due = subscription.status == Subscription.Status.PAST_DUE
             subscription.status = Subscription.Status.PAST_DUE
             subscription.past_due_since = subscription.past_due_since or now
             subscription.last_renewal_attempt_at = now
@@ -189,6 +195,8 @@ def renew_subscription(
                 "last_renewal_attempt_at",
                 "updated_at",
             ])
+            if not was_past_due:
+                notify_subscription_payment_failed(subscription.pk)
             return None
 
     period_start = max(subscription.current_period_end, now)
@@ -216,6 +224,7 @@ def renew_subscription(
         "last_renewed_at",
         "updated_at",
     ])
+    notify_subscription_renewed(subscription.pk)
     return transaction_entry
 
 
@@ -234,4 +243,5 @@ def expire_subscription(subscription_id, *, now=None):
         subscription.status = Subscription.Status.EXPIRED
     subscription.auto_renew = False
     subscription.save(update_fields=["status", "cancelled_at", "auto_renew", "updated_at"])
+    notify_subscription_expired(subscription.pk)
     return subscription

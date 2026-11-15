@@ -73,28 +73,34 @@ class OrderServiceTests(TestCase):
         self.assertEqual(order.items.get().line_total_cents, 1500)
 
     def test_confirm_order_captures_hold_and_debits_wallet_once(self):
+        from django.core import mail
+
         self.fund_wallet()
         order = place_order(
             self.user.customer.pk,
             self.plan.pk,
             idempotency_key="order-confirm-001",
         )
-        paid = confirm_order_payment(
-            order.pk,
-            signing_key_id=self.key.pk,
-            signer=self.signer,
-        )
-        repeated = confirm_order_payment(
-            order.pk,
-            signing_key_id=self.key.pk,
-            signer=self.signer,
-        )
+        with self.captureOnCommitCallbacks(execute=True):
+            paid = confirm_order_payment(
+                order.pk,
+                signing_key_id=self.key.pk,
+                signer=self.signer,
+            )
+            repeated = confirm_order_payment(
+                order.pk,
+                signing_key_id=self.key.pk,
+                signer=self.signer,
+            )
         self.wallet.refresh_from_db()
         self.assertEqual(paid.status, Order.Status.PAID)
         self.assertEqual(repeated.pk, order.pk)
         self.assertEqual(self.wallet.balance_cents, 8500)
         self.assertEqual(self.wallet.transactions.filter(type="purchase").count(), 1)
         self.assertIsNotNone(paid.paid_transaction_id)
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn("Bestellübersicht", mail.outbox[0].body)
+        self.assertIn("keine formale Rechnung", mail.outbox[0].body)
 
     def test_cancel_pending_order_releases_reserved_funds(self):
         self.fund_wallet()
@@ -436,17 +442,21 @@ class CustomerOrderViewsTests(TestCase):
         self.assertEqual(self.wallet.transactions.filter(type="purchase").count(), 1)
 
     def test_insufficient_wallet_balance_does_not_create_order_or_hold(self):
+        from django.core import mail
         from django.urls import reverse
 
-        response = self.client.post(
-            reverse("purchase_plan", args=[self.plan.pk]),
-            {"idempotency_key": "1d5a1f86-8c35-49aa-9d40-6065f43a43d2"},
-            follow=True,
-        )
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.client.post(
+                reverse("purchase_plan", args=[self.plan.pk]),
+                {"idempotency_key": "1d5a1f86-8c35-49aa-9d40-6065f43a43d2"},
+                follow=True,
+            )
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Guthaben reicht")
         self.assertFalse(Order.objects.filter(customer=self.user.customer).exists())
         self.assertFalse(self.wallet.holds.exists())
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn("Zahlung fehlgeschlagen", mail.outbox[0].subject)
 
     def test_customer_cannot_view_another_customers_order(self):
         from django.urls import reverse

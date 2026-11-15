@@ -20,6 +20,7 @@ from apps.subscriptions.services import (
     add_billing_interval,
     cancel_subscription,
     create_subscription_for_order_item,
+    expire_subscription,
     renew_subscription,
     set_auto_renew,
 )
@@ -115,23 +116,28 @@ class SubscriptionServiceTests(TestCase):
         self.assertTrue(enabled.auto_renew)
 
     def test_renewal_debits_wallet_and_extends_period_once(self):
+        from django.core import mail
+
         subscription = self.create_paid_subscription()
         subscription = set_auto_renew(subscription.pk, self.user.customer.pk, True)
         self.wallet.refresh_from_db()
         wallet_before = self.wallet.balance_cents
         due_time = subscription.next_billing_at
-        entry = renew_subscription(
-            subscription.pk,
-            signing_key_id=self.key.pk,
-            signer=self.signer,
-            now=due_time,
-        )
+        with self.captureOnCommitCallbacks(execute=True):
+            entry = renew_subscription(
+                subscription.pk,
+                signing_key_id=self.key.pk,
+                signer=self.signer,
+                now=due_time,
+            )
         subscription.refresh_from_db()
         self.wallet.refresh_from_db()
         self.assertEqual(entry.amount_cents, -1200)
         self.assertEqual(self.wallet.balance_cents, wallet_before - 1200)
         self.assertGreater(subscription.next_billing_at, due_time)
         self.assertEqual(subscription.status, Subscription.Status.ACTIVE)
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn("Aboverlängerung", mail.outbox[0].subject)
 
     def test_renewal_is_not_run_before_due_date(self):
         subscription = self.create_paid_subscription()
@@ -145,6 +151,7 @@ class SubscriptionServiceTests(TestCase):
             )
 
     def test_insufficient_balance_marks_subscription_past_due_without_debit(self):
+        from django.core import mail
         from apps.wallet.services import debit_wallet
 
         subscription = self.create_paid_subscription()
@@ -160,18 +167,44 @@ class SubscriptionServiceTests(TestCase):
         )
         self.wallet.refresh_from_db()
         balance_before = self.wallet.balance_cents
-        result = renew_subscription(
-            subscription.pk,
-            signing_key_id=self.key.pk,
-            signer=self.signer,
-            now=subscription.next_billing_at,
-        )
+        with self.captureOnCommitCallbacks(execute=True):
+            result = renew_subscription(
+                subscription.pk,
+                signing_key_id=self.key.pk,
+                signer=self.signer,
+                now=subscription.next_billing_at,
+            )
         subscription.refresh_from_db()
         self.wallet.refresh_from_db()
         self.assertIsNone(result)
         self.assertEqual(subscription.status, Subscription.Status.PAST_DUE)
         self.assertEqual(self.wallet.balance_cents, balance_before)
         self.assertIsNotNone(subscription.past_due_since)
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn("Abozahlung fehlgeschlagen", mail.outbox[0].subject)
+
+    def test_expiring_subscription_sends_one_service_notification(self):
+        from django.core import mail
+
+        subscription = self.create_paid_subscription()
+        due = timezone.now() - timedelta(days=1)
+        subscription.current_period_start = due - timedelta(days=30)
+        subscription.current_period_end = due
+        subscription.next_billing_at = due
+        subscription.save(update_fields=[
+            "current_period_start",
+            "current_period_end",
+            "next_billing_at",
+            "updated_at",
+        ])
+
+        with self.captureOnCommitCallbacks(execute=True):
+            ended = expire_subscription(subscription.pk, now=due)
+            expire_subscription(subscription.pk, now=due)
+
+        self.assertEqual(ended.status, Subscription.Status.EXPIRED)
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn("Abonnement beendet", mail.outbox[0].subject)
 
     def test_customer_can_enable_and_disable_own_auto_renewal(self):
         subscription = self.create_paid_subscription()

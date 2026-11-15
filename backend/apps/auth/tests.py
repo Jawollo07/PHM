@@ -1,4 +1,5 @@
 from io import StringIO
+import smtplib
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
@@ -69,6 +70,23 @@ class LoginTests(TestCase):
         self.assertRedirects(response, '/auth/')
         self.assertNotIn('_auth_user_id', self.client.session)
 
+    @patch("apps.auth.password_forms.sync_pelican_password")
+    def test_password_change_sends_security_notification(self, _sync_password):
+        from django.core import mail
+        from django.urls import reverse
+
+        self.client.force_login(self.user)
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.client.post(reverse("password_change"), {
+                "old_password": "correct-password",
+                "new_password1": "New-Strong-Passphrase-2026!",
+                "new_password2": "New-Strong-Passphrase-2026!",
+            })
+
+        self.assertRedirects(response, reverse("password_change_done"))
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn("Passwort geändert", mail.outbox[0].subject)
+
     def test_success_page_requires_authentication(self):
         response = self.client.get('/auth/login/test/')
 
@@ -137,10 +155,36 @@ class RegistrationAndEmailVerificationTests(TestCase):
     def tearDown(self):
         self.email_backend.disable()
 
+    @patch("apps.auth.email.send_mail")
+    def test_test_email_endpoint_renders_success_page(self, send_mail_mock):
+        from django.urls import reverse
+
+        response = self.client.get(reverse("test_mail"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTemplateUsed(response, "auth/test_email.html")
+        self.assertContains(response, "Die Test-E-Mail wurde erfolgreich versendet.")
+        send_mail_mock.assert_called_once()
+
+    @patch("apps.auth.email.send_mail", side_effect=OSError("SMTP unavailable"))
+    def test_test_email_endpoint_renders_error_page(self, _send_mail_mock):
+        from django.urls import reverse
+
+        response = self.client.get(reverse("test_mail"))
+
+        self.assertEqual(response.status_code, 500)
+        self.assertTemplateUsed(response, "auth/test_email.html")
+        self.assertContains(
+            response,
+            "Die Test-E-Mail konnte nicht versendet werden.",
+            status_code=500,
+        )
+
     def test_registration_creates_personal_customer_wallet_and_hashed_token(self):
         import hashlib
         import re
 
+        from django.conf import settings
         from django.core import mail
         from django.urls import reverse
         from apps.auth.models import EmailVerification
@@ -159,6 +203,7 @@ class RegistrationAndEmailVerificationTests(TestCase):
         self.assertTrue(hasattr(user, "customer"))
         self.assertTrue(Wallet.objects.filter(customer=user.customer).exists())
         self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(mail.outbox[0].from_email, settings.EMAIL_HOST_USER)
 
         token = re.search(r"/auth/verify/([^/]+)", mail.outbox[0].body).group(1)
         verification = EmailVerification.objects.get(user=user)
@@ -167,6 +212,31 @@ class RegistrationAndEmailVerificationTests(TestCase):
             hashlib.sha256(token.encode("utf-8")).hexdigest(),
         )
         self.assertNotEqual(verification.token_hash, token)
+
+    @patch(
+        "apps.auth.services.send_mail",
+        side_effect=smtplib.SMTPRecipientsRefused(
+            {"invalid@example.com": (550, b"5.1.2 Mailbox does not exist")}
+        ),
+    )
+    def test_registration_shows_recipient_error_and_rolls_back(self, _send_mail_mock):
+        from django.urls import reverse
+        from apps.auth.models import EmailVerification
+
+        response = self.client.post(reverse("register"), {
+            "username": "failed-delivery",
+            "email": "invalid@example.com",
+            "password1": "Strong-Passphrase-2026!x",
+            "password2": "Strong-Passphrase-2026!x",
+        })
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTemplateUsed(response, "auth/register.html")
+        self.assertContains(response, "Diese E-Mail-Adresse wurde vom Mailserver abgelehnt.")
+        self.assertFalse(User.objects.filter(username="failed-delivery").exists())
+        self.assertFalse(
+            EmailVerification.objects.filter(email="invalid@example.com").exists()
+        )
 
     def test_email_verification_enables_login_and_is_one_time(self):
         import re
@@ -279,3 +349,37 @@ class RegistrationAndEmailVerificationTests(TestCase):
         self.assertRedirects(response, reverse("password_reset_done"))
         done = self.client.get(reverse("password_reset_done"))
         self.assertContains(done, "Wenn ein bestätigtes Konto zu dieser Adresse existiert")
+
+    @patch("apps.auth.password_forms.sync_pelican_password")
+    def test_password_reset_completion_sends_security_notification(self, _sync_password):
+        from django.contrib.auth.tokens import default_token_generator
+        from django.core import mail
+        from django.urls import reverse
+        from django.utils.encoding import force_bytes
+        from django.utils.http import urlsafe_base64_encode
+
+        user = User.objects.create_user(
+            username="reset-notification",
+            email="reset-notification@example.com",
+            password="Old-Strong-Passphrase-2026!",
+            email_verified=True,
+        )
+        confirm_url = reverse(
+            "password_reset_confirm",
+            kwargs={
+                "uidb64": urlsafe_base64_encode(force_bytes(user.pk)),
+                "token": default_token_generator.make_token(user),
+            },
+        )
+        confirm_response = self.client.get(confirm_url)
+        self.assertEqual(confirm_response.status_code, 302)
+
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.client.post(confirm_response["Location"], {
+                "new_password1": "New-Strong-Passphrase-2026!",
+                "new_password2": "New-Strong-Passphrase-2026!",
+            })
+
+        self.assertRedirects(response, reverse("password_reset_complete"))
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn("Passwort geändert", mail.outbox[0].subject)

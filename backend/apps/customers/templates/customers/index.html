@@ -154,6 +154,29 @@
             gap: 1rem;
         }
 
+        .overview-grid { margin: 1.5rem 0; }
+        .summary-item { padding: .8rem 0; border-top: 1px solid #edf0f5; }
+        .summary-item:first-of-type { border-top: 0; }
+        .summary-title { display: flex; justify-content: space-between; gap: .75rem; align-items: baseline; }
+        .summary-title h3 { margin: 0; font-size: .96rem; }
+        .summary-meta { margin: .35rem 0 0; color: #78849a; font-size: .84rem; line-height: 1.5; }
+        .resource-list { display: flex; flex-wrap: wrap; gap: .35rem; margin-top: .5rem; }
+        .resource-chip { padding: .25rem .45rem; border-radius: .45rem; background: #f1f5fb; color: #526078; font-size: .76rem; }
+        .summary-actions { display: flex; gap: .5rem; flex-wrap: wrap; margin-top: .65rem; }
+        .summary-actions form { margin: 0; }
+        .summary-actions button {
+            padding: .45rem .65rem;
+            border: 0;
+            border-radius: .5rem;
+            background: #3156a5;
+            color: #fff;
+            cursor: pointer;
+            font: inherit;
+            font-size: .8rem;
+            font-weight: 700;
+        }
+        .summary-actions button.secondary { background: #e8edf6; color: #35435c; }
+
         .card {
             min-width: 0;
             padding: 1.35rem;
@@ -289,7 +312,8 @@
         @media (max-width: 640px) {
             .page { width: min(100% - 1.25rem, 1040px); padding-top: 1.25rem; }
             .topbar { margin-bottom: 2.25rem; }
-            .grid { grid-template-columns: 1fr; }\n            .wallet-overview { grid-template-columns: 1fr; }
+            .grid { grid-template-columns: 1fr; }
+            .wallet-overview { grid-template-columns: 1fr; }
             .card { padding: 1.15rem; }
             .field-grid { grid-template-columns: 1fr; }
             .edit-content { padding-right: 1rem; padding-left: 1rem; }
@@ -327,8 +351,121 @@
                 {% else %}
                     <p class="state off">E-Mail noch nicht bestätigt</p>
                 {% endif %}
+                <p><a href="{% url 'password_change' %}">Passwort ändern</a></p>
             </div>
         </section>
+
+        <div class="grid overview-grid">
+            <section class="card" aria-labelledby="orders-overview-heading">
+                <div class="section-heading">
+                    <h2 id="orders-overview-heading">Bestellungen</h2>
+                    <span class="tag">{{ customer_overview.order_count }}</span>
+                </div>
+                {% for order in customer_overview.orders %}
+                    <article class="summary-item">
+                        <div class="summary-title">
+                            <h3><a href="{% url 'order_detail' order.id %}">Bestellung {{ order.id }}</a></h3>
+                            <strong>{{ order.total_eur|floatformat:2 }} EUR</strong>
+                        </div>
+                        <p class="summary-meta">{{ order.created_at|date:"d.m.Y" }} · {{ order.get_status_display }}</p>
+                    </article>
+                {% empty %}
+                    <p class="empty">Noch keine Bestellungen vorhanden.</p>
+                {% endfor %}
+                <p><a href="{% url 'orders' %}">Alle Bestellungen ansehen</a></p>
+            </section>
+
+            <section class="card" aria-labelledby="subscriptions-overview-heading">
+                <div class="section-heading">
+                    <h2 id="subscriptions-overview-heading">Abonnements</h2>
+                    <span class="tag">{{ customer_overview.subscription_count }}</span>
+                </div>
+                {% for subscription in customer_overview.subscriptions %}
+                    <article class="summary-item">
+                        <div class="summary-title">
+                            <h3>{{ subscription.order_item.product_name }} – {{ subscription.order_item.plan_name }}</h3>
+                            <strong>{{ subscription.get_status_display }}</strong>
+                        </div>
+                        <p class="summary-meta">
+                            Laufzeit: {{ subscription.current_period_start|date:"d.m.Y" }}–{{ subscription.current_period_end|date:"d.m.Y" }}<br>
+                            Verlängerung: {{ subscription.price_eur|floatformat:2 }} EUR je {{ subscription.billing_interval_count }} {{ subscription.get_billing_interval_unit_display }}<br>
+                            {% if subscription.cancel_at_period_end %}
+                                Ende am {{ subscription.current_period_end|date:"d.m.Y" }} · keine weitere Abbuchung geplant
+                            {% elif subscription.auto_renew %}
+                                Nächste Abbuchung: {{ subscription.next_billing_at|date:"d.m.Y" }} · {{ subscription.price_eur|floatformat:2 }} EUR
+                            {% else %}
+                                Leistungsende: {{ subscription.current_period_end|date:"d.m.Y" }} · automatische Verlängerung aus
+                            {% endif %}
+                        </p>
+                        {% if subscription.status == "active" or subscription.status == "past_due" %}
+                            {% if not subscription.cancel_at_period_end %}
+                                <div class="summary-actions">
+                                    <form method="post" action="{% url 'subscription_action' subscription.id %}">
+                                        {% csrf_token %}
+                                        {% if subscription.auto_renew %}
+                                            <input type="hidden" name="action" value="disable_auto_renew">
+                                            <button class="secondary" type="submit">Verlängerung ausschalten</button>
+                                        {% else %}
+                                            <input type="hidden" name="action" value="enable_auto_renew">
+                                            <button type="submit">Automatisch verlängern</button>
+                                        {% endif %}
+                                    </form>
+                                    <a href="{% url 'subscriptions' %}">Weitere Optionen</a>
+                                </div>
+                            {% endif %}
+                        {% endif %}
+                    </article>
+                {% empty %}
+                    <p class="empty">Noch keine Abonnements vorhanden.</p>
+                {% endfor %}
+                <p><a href="{% url 'subscriptions' %}">Alle Abonnements verwalten</a></p>
+            </section>
+
+            <section class="card" aria-labelledby="billing-overview-heading">
+                <div class="section-heading">
+                    <h2 id="billing-overview-heading">Abrechnungen</h2>
+                    <span class="tag">Zahlungsübersicht</span>
+                </div>
+                <p class="summary-meta">Hier erscheinen bezahlte Bestellungen und Aboverlängerungen. Formale Rechnungsdokumente sind derzeit nicht verfügbar.</p>
+                {% for entry in customer_overview.billing_entries %}
+                    <article class="summary-item">
+                        <div class="summary-title">
+                            <h3>{{ entry.kind }}</h3>
+                            <strong>{{ entry.amount }}</strong>
+                        </div>
+                        <p class="summary-meta">{{ entry.date|date:"d.m.Y H:i" }} · {{ entry.description }}{% if entry.reference %}<br>Referenz: {{ entry.reference }}{% endif %}</p>
+                    </article>
+                {% empty %}
+                    <p class="empty">Noch keine abgerechneten Zahlungen vorhanden.</p>
+                {% endfor %}
+            </section>
+
+            <section class="card" aria-labelledby="servers-overview-heading">
+                <div class="section-heading">
+                    <h2 id="servers-overview-heading">Server</h2>
+                    <span class="tag">{{ customer_overview.server_count }}</span>
+                </div>
+                {% for server in customer_overview.servers %}
+                    <article class="summary-item">
+                        <div class="summary-title">
+                            <h3>{{ server.panel_name|default:server.order_item.plan_name }}</h3>
+                            <strong>{{ server.customer_status_display }}</strong>
+                        </div>
+                        <p class="summary-meta">Bestellung {{ server.order_item.order_id }} · angelegt {{ server.created_at|date:"d.m.Y" }}</p>
+                        {% if server.resource_details %}
+                            <div class="resource-list">
+                                {% for resource in server.resource_details %}
+                                    <span class="resource-chip">{{ resource.label }}: {{ resource.value }}</span>
+                                {% endfor %}
+                            </div>
+                        {% endif %}
+                    </article>
+                {% empty %}
+                    <p class="empty">Noch keine Server vorhanden.</p>
+                {% endfor %}
+                <p><a href="{% url 'pelican_servers' %}">Serverdetails und Status ansehen</a></p>
+            </section>
+        </div>
 
         <details class="edit-panel" {% if form.errors %}open{% endif %}>
             <summary>Kontodaten bearbeiten</summary>

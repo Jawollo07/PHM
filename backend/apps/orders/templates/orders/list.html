@@ -4,9 +4,10 @@
 <body><main><p><a href="{% url 'catalog' %}">← Zum Katalog</a></p><h1>Meine Bestellungen</h1>
 {% for message in messages %}<p role="status">{{ message }}</p>{% endfor %}
 {% for order in orders %}
-<article class="order"><p class="muted">{{ order.created_at|date:"d.m.Y H:i" }} · {{ order.status }}</p>
+<article class="order"><p class="muted">{{ order.created_at|date:"d.m.Y H:i" }} · {{ order.get_status_display }}</p>
 <h2><a href="{% url 'order_detail' order.id %}">Bestellung {{ order.id }}</a></h2>
 {% for item in order.items.all %}<p>{{ item.product_name }} – {{ item.plan_name }} × {{ item.quantity }}</p>{% endfor %}
-<p class="amount">{{ order.total_eur|floatformat:2 }} EUR</p></article>
+<p class="amount">{{ order.total_eur|floatformat:2 }} EUR</p>
+{% if order.paid_at %}<p class="muted">Bezahlt am {{ order.paid_at|date:"d.m.Y H:i" }}</p>{% endif %}</article>
 {% empty %}<p>Du hast noch keine Bestellungen.</p>{% endfor %}
 </main></body></html>
