@@ -304,9 +304,10 @@ class SubscriptionServiceTests(TestCase):
         )
         due = timezone.now() - timedelta(days=1)
         subscription.refresh_from_db()
+        subscription.current_period_start = due - timedelta(days=30)
         subscription.current_period_end = due
         subscription.next_billing_at = due
-        subscription.save(update_fields=["current_period_end", "next_billing_at", "updated_at"])
+        subscription.save(update_fields=["current_period_start", "current_period_end", "next_billing_at", "updated_at"])
 
         call_command("process_subscription_renewals")
         subscription.refresh_from_db()
