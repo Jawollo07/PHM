@@ -194,3 +194,49 @@ class PelicanServerProvisioningTests(TestCase):
 
         self.assertEqual(len(selected), 2)
         self.assertNotEqual(selected[0], selected[1])
+
+    def test_customer_dashboard_only_lists_the_authenticated_customers_servers(self):
+        from django.test import Client
+
+        other_user = User.objects.create_user(
+            username="other-customer",
+            email="other@example.com",
+            password="not-used-in-test",
+            email_verified=True,
+        )
+        other_customer = Customer.objects.get(user=other_user)
+        other_order = Order.objects.create(
+            customer=other_customer,
+            status=Order.Status.PAID,
+            total_cents=0,
+            idempotency_key="other-customer-order",
+            paid_at=timezone.now(),
+        )
+        other_item = OrderItem.objects.create(
+            order=other_order,
+            plan=self.plan,
+            product_name="Minecraft",
+            plan_name="Other customer's server",
+            description="",
+            quantity=1,
+            unit_price_cents=0,
+            setup_fee_cents=0,
+            line_total_cents=0,
+            billing_interval_unit="once",
+            billing_interval_count=1,
+            resource_limits=self.plan.resource_limits,
+        )
+        PelicanServer.objects.create(
+            order_item=other_item,
+            quantity_index=1,
+            customer=other_customer,
+            external_id=f"phm-orderitem-{other_item.pk}",
+        )
+
+        client = Client()
+        client.force_login(self.user)
+        response = client.get("/servers/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, str(self.order.pk))
+        self.assertNotContains(response, str(other_order.pk))
