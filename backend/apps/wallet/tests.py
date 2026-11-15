@@ -156,8 +156,8 @@ class WalletServiceTests(TestCase):
             1000,
             description="Top-up",
             idempotency_key="service-credit-2",
-            signing_key_id=self.key.pk,
-            signer=self.signer,
+            signing_key_id=key.pk,
+            signer=signer,
         )
         place_hold(self.wallet.pk, amount_cents=700, idempotency_key="service-hold-1")
 
@@ -646,14 +646,6 @@ class ManualWalletAdjustmentAdminTests(TestCase):
         )
         self.user.user_permissions.add(permission)
         self.wallet = self.user.customer.wallet
-        self.key = LedgerSigningKey.objects.create(
-            key_id="wallet-admin-capture-test-key",
-            label="Wallet admin capture test key",
-            public_key=b"wallet-admin-capture-public-key",
-            fingerprint="f" * 64,
-            status=LedgerSigningKey.Status.ACTIVE,
-        )
-        self.signer = lambda payload: b"wallet-admin-capture-test-signature"
         self.client.force_login(self.user)
 
     def test_wallet_changelist_renders_manual_adjustment_link(self):
@@ -809,6 +801,14 @@ class ManualWalletAdjustmentAdminTests(TestCase):
     def test_capture_uses_its_own_reserved_funds_without_spending_other_holds(self):
         from apps.wallet.services import capture_hold, credit_wallet, place_hold
 
+        key = LedgerSigningKey.objects.create(
+            key_id="wallet-admin-capture-test-key",
+            label="Wallet admin capture test key",
+            public_key=b"wallet-admin-capture-public-key",
+            fingerprint="f" * 64,
+            status=LedgerSigningKey.Status.ACTIVE,
+        )
+        signer = lambda payload: b"wallet-admin-capture-test-signature"
         credit_wallet(
             self.wallet.pk,
             10000,
