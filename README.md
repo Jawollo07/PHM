@@ -10,7 +10,7 @@ PHM supports **private customers only**. There are no business accounts, company
 
 Each registered user is provisioned with one personal customer account and one wallet belonging to that customer. The customer account holds contact information, addresses and customer-specific preferences.
 
-Customers will be able to purchase and renew hosting services using their wallet and view their transactions, orders, invoices and assigned servers. Administrators manually credit or debit customer wallets and may assign privately managed servers to customers. Online top-ups, payment methods, payment providers and payment processing are explicitly out of scope.
+Customers can purchase and renew hosting services using their wallet and view their transactions, orders, subscriptions and assigned Pelican servers. Administrators manually credit or debit customer wallets and may assign privately managed servers to customers. Online top-ups, payment methods, payment providers and payment processing are explicitly out of scope.
 
 ## Technology and current state
 
@@ -20,7 +20,7 @@ Customers will be able to purchase and renew hosting services using their wallet
 | Authentication | Django authentication with a custom `User` model |
 | Database | SQLite in the current development settings; PostgreSQL is intended for production |
 | Frontend | No complete frontend architecture established in the current repository |
-| Hosting integration | Pelican Application API user creation/linking implemented; server allocation remains pending |
+| Hosting integration | Pelican user linking, idempotent per-unit server provisioning, installation reconciliation and customer server overview implemented |
 | Payments | No payment providers, payment methods or online top-ups; administrators make manual wallet adjustments only |
 | Deployment | Production configuration pending |
 
@@ -48,7 +48,7 @@ Contains administrator-managed hosting products and plans. Prices and setup fees
 
 ### `apps.orders`
 
-Contains wallet-funded order creation and the customer checkout flow. Placing a paid order reserves wallet funds through a hold; confirming payment captures the hold and writes a signed purchase transaction. Cancelling an unpaid order releases the reservation. Free plans can be ordered without creating a zero-value ledger entry. Order items preserve immutable product, plan, price, billing interval and resource snapshots. Customers can browse active catalog entries, purchase with their wallet and view only their own orders. Automated server provisioning is still pending.
+Contains wallet-funded order creation and the customer checkout flow. Placing a paid order reserves wallet funds through a hold; confirming payment captures the hold and writes a signed purchase transaction. Cancelling an unpaid order releases the reservation. Free plans can be ordered without creating a zero-value ledger entry. Order items preserve immutable product, plan, price, billing interval, quantity and resource snapshots. Customers can browse active catalog entries, purchase with their wallet and view only their own orders. Paid Pelican orders enqueue one durable provisioning job for every purchased unit.
 
 ### `apps.wallet`
 
@@ -58,11 +58,14 @@ Owns the single EUR wallet for each personal customer. The repository includes w
 
 Recurring orders create a subscription snapshot after successful wallet payment. Billing intervals use calendar-aware day, week, month and year arithmetic. Automatic renewal is **disabled by default** and requires explicit customer opt-in. Renewals debit only the customer's PHM wallet; insufficient funds move the subscription to `past_due` without creating a debit. Customers can disable renewal or schedule cancellation at the end of the paid period. `process_subscription_renewals` processes due contracts. Automatic service suspension and notifications are not enabled yet.
 
+### `apps.pelican`
+
+Links verified PHM customers to Pelican users and provisions one independent Pelican server for each purchased unit. Provisioning is idempotent through stable external IDs, verifies the remote server owner before linking, reconciles installation state and retries transient failures with exponential backoff. The management command backfills all eligible paid orders and rotates fairly through pending/installing jobs. Customers see only their own servers at `/servers/`; installed servers link to their Pelican Panel page for console and power controls. PHM does not store or impersonate customer Client API keys. The Application API token is configured only on the backend and must use least-privilege permissions.
+
 ### Planned domain applications
 
 The following areas remain planned and are not yet complete:
 - `invoices`: immutable invoice documents, legally compliant numbering and tax handling;
-- `pelican`: synchronization and provisioning through the Pelican Panel API;
 - `audit`: security-sensitive and administrative audit events;
 - `notifications`: customer email and in-app notifications.
 
@@ -177,3 +180,31 @@ The repository includes systemd unit templates under `deploy/systemd/`:
 Before installing, adjust `User`, `Group`, `WorkingDirectory`, the virtualenv path and `EnvironmentFile` in both service units to the actual deployment. Create the first signed ledger anchor once with `python manage.py checkpoint_ledger`; the daily verifier requires an existing checkpoint. Then install the units, run `systemctl daemon-reload` and enable the timers with `systemctl enable --now phm-ledger-integrity.timer phm-subscription-renewals.timer`. Check execution with `systemctl list-timers` and `journalctl -u phm-ledger-integrity.service -u phm-subscription-renewals.service`.
 
 These are deployment templates only. They are not activated on a server by committing them to the repository.
+
+
+## Pelican provisioning
+
+Set `PELICAN_PANEL_URL` to the HTTPS base URL of the panel and `PELICAN_APPLICATION_API_TOKEN` to a restricted Application API token in the deployment environment file. Optional `PELICAN_API_TIMEOUT` defaults to 10 seconds. Never commit API tokens.
+
+Each hosting plan stores a `pelican` object inside its immutable `resource_limits` snapshot. It must define `egg_id`, `allocation_id`, `docker_image`, `startup`, `environment`, `limits` (memory, swap, disk, io and cpu) and `feature_limits` (databases, allocations and backups). Pelican accepts I/O values from 0 to 1000. The allocation selects the node. For example:
+
+```json
+{
+  "pelican": {
+    "egg_id": 15,
+    "allocation_id": 42,
+    "docker_image": "ghcr.io/pelican/yolks:java_21",
+    "startup": "java -Xms128M -Xmx{{SERVER_MEMORY}}M -jar {{SERVER_JARFILE}}",
+    "environment": {"SERVER_JARFILE": "server.jar"},
+    "limits": {"memory": 4096, "swap": 0, "disk": 20480, "io": 500, "cpu": 200},
+    "feature_limits": {"databases": 1, "allocations": 1, "backups": 2},
+    "skip_scripts": false,
+    "oom_disabled": false,
+    "start_on_completion": true
+  }
+}
+```
+
+Run provisioning manually with `python manage.py provision_pelican_servers --limit 50 --retry-failed`. The systemd service and timer templates are in `deploy/systemd/phm-pelican-provisioning.service` and `deploy/systemd/phm-pelican-provisioning.timer`; adjust the service account, paths and environment file before installation. The timer runs every minute. The command backfills all paid/provisioning/active orders, while `--limit` controls only how many server jobs are processed per run.
+
+Customers open `/servers/` to see the provisioning and installation status of their own servers. Once installed, a server links to its Pelican Panel page. Start/stop/restart and console access remain in Pelican itself: those functions use the separate customer Client API credential, which PHM deliberately does not collect or store. The Application API token remains server-side and is never sent to the browser.
