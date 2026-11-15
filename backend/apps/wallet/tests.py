@@ -646,6 +646,14 @@ class ManualWalletAdjustmentAdminTests(TestCase):
         )
         self.user.user_permissions.add(permission)
         self.wallet = self.user.customer.wallet
+        self.key = LedgerSigningKey.objects.create(
+            key_id="wallet-admin-capture-test-key",
+            label="Wallet admin capture test key",
+            public_key=b"wallet-admin-capture-public-key",
+            fingerprint="f" * 64,
+            status=LedgerSigningKey.Status.ACTIVE,
+        )
+        self.signer = lambda payload: b"wallet-admin-capture-test-signature"
         self.client.force_login(self.user)
 
     def test_wallet_changelist_renders_manual_adjustment_link(self):
