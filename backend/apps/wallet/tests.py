@@ -156,8 +156,8 @@ class WalletServiceTests(TestCase):
             1000,
             description="Top-up",
             idempotency_key="service-credit-2",
-            signing_key_id=key.pk,
-            signer=signer,
+            signing_key_id=self.key.pk,
+            signer=self.signer,
         )
         place_hold(self.wallet.pk, amount_cents=700, idempotency_key="service-hold-1")
 
