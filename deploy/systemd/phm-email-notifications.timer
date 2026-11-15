@@ -1,0 +1,11 @@
+[Unit]
+Description=Run the PHM customer email notification queue every minute
+
+[Timer]
+OnCalendar=*-*-* *:*:00 Europe/Berlin
+Persistent=true
+AccuracySec=10s
+Unit=phm-email-notifications.service
+
+[Install]
+WantedBy=timers.target

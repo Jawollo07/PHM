@@ -1,7 +1,7 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
 
-from .models import EmailVerification, User, UserProfile
+from .models import EmailNotification, EmailVerification, User, UserProfile
 
 
 @admin.register(User)
@@ -46,4 +46,18 @@ class EmailVerificationAdmin(admin.ModelAdmin):
         return False
 
     def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(EmailNotification)
+class EmailNotificationAdmin(admin.ModelAdmin):
+    list_display = ("created_at", "recipient", "category", "status", "attempts", "sent_at")
+    list_filter = ("status", "category")
+    search_fields = ("recipient", "subject", "last_error")
+    readonly_fields = tuple(field.name for field in EmailNotification._meta.fields)
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
         return False

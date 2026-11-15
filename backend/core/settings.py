@@ -164,9 +164,15 @@ DEFAULT_FROM_EMAIL = os.environ.get(
     "DEFAULT_FROM_EMAIL", EMAIL_HOST_USER or "noreply@localhost"
 ).strip()
 # Keep the old DJANGO_EMAIL_BACKEND setting working for existing deployments/CI.
+EXPLICIT_EMAIL_BACKEND = (
+    os.environ.get("EMAIL_BACKEND") or os.environ.get("DJANGO_EMAIL_BACKEND")
+)
+if not DEBUG and not EMAIL_HOST and not EXPLICIT_EMAIL_BACKEND:
+    raise ImproperlyConfigured(
+        "Configure EMAIL_HOST or EMAIL_BACKEND before running PHM in production."
+    )
 EMAIL_BACKEND = (
-    os.environ.get("EMAIL_BACKEND")
-    or os.environ.get("DJANGO_EMAIL_BACKEND")
+    EXPLICIT_EMAIL_BACKEND
     or (
         "django.core.mail.backends.smtp.EmailBackend"
         if EMAIL_HOST

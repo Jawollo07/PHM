@@ -74,6 +74,7 @@ class LoginTests(TestCase):
     def test_password_change_sends_security_notification(self, _sync_password):
         from django.core import mail
         from django.urls import reverse
+        from django.core.management import call_command
 
         self.client.force_login(self.user)
         with self.captureOnCommitCallbacks(execute=True):
@@ -84,6 +85,8 @@ class LoginTests(TestCase):
             })
 
         self.assertRedirects(response, reverse("password_change_done"))
+        self.assertEqual(len(mail.outbox), 0)
+        call_command("process_email_notifications")
         self.assertEqual(len(mail.outbox), 1)
         self.assertIn("Passwort geändert", mail.outbox[0].subject)
 
@@ -91,6 +94,69 @@ class LoginTests(TestCase):
         response = self.client.get('/auth/login/test/')
 
         self.assertRedirects(response, '/auth/?next=/auth/login/test/')
+
+
+    @patch("apps.auth.management.commands.process_email_notifications.send_mail")
+    def test_security_notification_is_queued_then_delivered(self, send_mail_mock):
+        from django.core import mail
+        from django.core.management import call_command
+        from apps.auth.models import EmailNotification
+        from apps.auth.services import notify_password_changed
+
+        with self.captureOnCommitCallbacks(execute=True):
+            notify_password_changed(self.user.pk)
+        notification = EmailNotification.objects.get(user=self.user)
+        self.assertEqual(notification.status, EmailNotification.Status.PENDING)
+        self.assertEqual(len(mail.outbox), 0)
+
+        call_command("process_email_notifications")
+        notification.refresh_from_db()
+        self.assertEqual(notification.status, EmailNotification.Status.SENT)
+        self.assertEqual(notification.attempts, 1)
+        self.assertIsNotNone(notification.sent_at)
+        send_mail_mock.assert_called_once()
+
+    @patch(
+        "apps.auth.management.commands.process_email_notifications.send_mail",
+        side_effect=OSError("SMTP offline"),
+    )
+    def test_failed_delivery_is_persisted_for_retry(self, _send_mail_mock):
+        from datetime import timedelta
+        from django.core.management import call_command
+        from django.utils import timezone
+        from apps.auth.models import EmailNotification
+        from apps.auth.services import notify_password_changed
+
+        with self.captureOnCommitCallbacks(execute=True):
+            notify_password_changed(self.user.pk)
+        notification = EmailNotification.objects.get(user=self.user)
+        call_command("process_email_notifications")
+
+        notification.refresh_from_db()
+        self.assertEqual(notification.status, EmailNotification.Status.PENDING)
+        self.assertEqual(notification.attempts, 1)
+        self.assertIn("SMTP offline", notification.last_error)
+        self.assertGreater(notification.available_at, timezone.now())
+        self.assertLessEqual(
+            notification.available_at,
+            timezone.now() + timedelta(seconds=65),
+        )
+
+    @patch("apps.auth.management.commands.process_email_notifications.send_mail")
+    def test_disabled_notification_preference_prevents_delivery(self, send_mail_mock):
+        from django.core.management import call_command
+        from apps.auth.models import EmailNotification
+        from apps.auth.services import notify_password_changed
+
+        settings = self.user.customer.settings
+        settings.email_notifications = False
+        settings.save(update_fields=["email_notifications"])
+        with self.captureOnCommitCallbacks(execute=True):
+            notify_password_changed(self.user.pk)
+
+        self.assertFalse(EmailNotification.objects.filter(user=self.user).exists())
+        call_command("process_email_notifications")
+        send_mail_mock.assert_not_called()
 
 
 class SuperuserManagerTests(TestCase):
@@ -388,6 +454,7 @@ class RegistrationAndEmailVerificationTests(TestCase):
         from django.contrib.auth.tokens import default_token_generator
         from django.core import mail
         from django.urls import reverse
+        from django.core.management import call_command
         from django.utils.encoding import force_bytes
         from django.utils.http import urlsafe_base64_encode
 
@@ -414,5 +481,7 @@ class RegistrationAndEmailVerificationTests(TestCase):
             })
 
         self.assertRedirects(response, reverse("password_reset_complete"))
+        self.assertEqual(len(mail.outbox), 0)
+        call_command("process_email_notifications")
         self.assertEqual(len(mail.outbox), 1)
         self.assertIn("Passwort geändert", mail.outbox[0].subject)

@@ -56,7 +56,7 @@ Owns the single EUR wallet for each personal customer. The repository includes w
 
 ### `apps.subscriptions`
 
-Recurring orders create a subscription snapshot after successful wallet payment. Billing intervals use calendar-aware day, week, month and year arithmetic. Automatic renewal is **disabled by default** and requires explicit customer opt-in. Renewals debit only the customer's PHM wallet; insufficient funds move the subscription to `past_due` without creating a debit. Customers can disable renewal or schedule cancellation at the end of the paid period. `process_subscription_renewals` processes due contracts. Billing-state synchronization suspends or unsuspends linked Pelican servers; customer email notifications are sent for supported payment, service and security events.
+Recurring orders create a subscription snapshot after successful wallet payment. Billing intervals use calendar-aware day, week, month and year arithmetic. Automatic renewal is **disabled by default** and requires explicit customer opt-in. Renewals debit only the customer's PHM wallet; insufficient funds move the subscription to `past_due` without creating a debit. Customers can disable renewal or schedule cancellation at the end of the paid period. `process_subscription_renewals` processes due contracts. Billing-state synchronization suspends or unsuspends linked Pelican servers; supported payment, service and security emails are persisted in a durable queue and delivered by `process_email_notifications` with bounded exponential retries.
 
 ### `apps.pelican`
 
@@ -67,7 +67,7 @@ Links verified PHM customers to Pelican users and provisions one independent Pel
 The following areas remain planned and are not yet complete:
 - `invoices`: immutable invoice documents, legally compliant numbering and tax handling;
 - `audit`: security-sensitive and administrative audit events;
-- `notifications`: customer email and in-app notifications.
+- In-app notifications remain planned; customer email delivery is implemented through a durable database queue with bounded retries.
 
 ## Wallet and accounting rules
 
@@ -148,8 +148,8 @@ Before deploying PHM:
 - configure `ALLOWED_HOSTS` and trusted CSRF origins;
 - configure PostgreSQL and database credentials outside source control;
 - configure secure HTTPS cookies and proxy headers for the actual reverse-proxy setup;
-- configure `EMAIL_HOST`, `EMAIL_PORT`, `EMAIL_HOST_USER`, `EMAIL_HOST_PASSWORD`, `EMAIL_USE_TLS` or `EMAIL_USE_SSL`, and `DEFAULT_FROM_EMAIL`;
-- configure `DJANGO_EMAIL_BACKEND` or `EMAIL_BACKEND` only when overriding the backend (development defaults to the console backend when no SMTP host is configured);
+- configure `EMAIL_HOST`, `EMAIL_PORT`, `EMAIL_HOST_USER`, `EMAIL_HOST_PASSWORD`, `EMAIL_USE_TLS` or `EMAIL_USE_SSL`, and `DEFAULT_FROM_EMAIL`; install and enable `deploy/systemd/phm-email-notifications.timer` to deliver queued customer emails every minute;
+- configure `DJANGO_EMAIL_BACKEND` or `EMAIL_BACKEND` only when overriding the backend (development defaults to the console backend when no SMTP host is configured; production requires an explicit SMTP host or email backend);
 - remove password, token and payment-data logging;
 - apply least-privilege database permissions;
 - add tests for authorization, customer isolation, wallet concurrency and payment idempotency;

@@ -1,5 +1,6 @@
 import uuid
 
+from django.conf import settings
 from django.contrib.auth.models import AbstractUser, BaseUserManager
 from django.db import models, transaction
 from django.utils import timezone
@@ -111,3 +112,48 @@ class EmailVerification(models.Model):
     @property
     def is_valid(self):
         return self.verified_at is None and self.expires_at > timezone.now()
+
+
+class EmailNotification(models.Model):
+    """Durable outbound customer email with bounded retry metadata."""
+
+    class Category(models.TextChoices):
+        PAYMENT = "payment", "Payment"
+        SERVICE = "service", "Service"
+        SECURITY = "security", "Security"
+
+    class Status(models.TextChoices):
+        PENDING = "pending", "Pending"
+        PROCESSING = "processing", "Processing"
+        SENT = "sent", "Sent"
+        FAILED = "failed", "Failed"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL,
+        related_name="email_notifications",
+    )
+    category = models.CharField(max_length=20, choices=Category.choices)
+    recipient = models.EmailField()
+    subject = models.CharField(max_length=255)
+    message = models.TextField()
+    status = models.CharField(
+        max_length=20, choices=Status.choices, default=Status.PENDING, db_index=True
+    )
+    attempts = models.PositiveSmallIntegerField(default=0)
+    max_attempts = models.PositiveSmallIntegerField(default=8)
+    available_at = models.DateTimeField(default=timezone.now, db_index=True)
+    locked_at = models.DateTimeField(null=True, blank=True)
+    last_error = models.CharField(max_length=500, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    sent_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = "accounts_email_notification"
+        ordering = ["created_at"]
+        indexes = [
+            models.Index(fields=["status", "available_at"], name="email_notif_due_idx"),
+        ]
+
+    def __str__(self):
+        return f"{self.category}: {self.recipient} ({self.status})"

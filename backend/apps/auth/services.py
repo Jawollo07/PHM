@@ -13,7 +13,7 @@ from django.utils import timezone
 
 from apps.customers.models import CustomerSettings
 
-from .models import EmailVerification
+from .models import EmailNotification, EmailVerification
 
 
 VERIFICATION_LIFETIME = timedelta(hours=24)
@@ -64,32 +64,25 @@ def _format_eur(cents):
 
 
 def _deliver_notification(user_id, category, subject, message):
+    """Persist an outbound email; delivery is handled by process_email_notifications."""
     user = get_user_model().objects.filter(pk=user_id).only("email").first()
     if user is None or not user.email:
-        return
+        return None
 
     preferences = CustomerSettings.objects.filter(customer__user_id=user_id).first()
     if preferences and (
         not preferences.email_notifications
         or not getattr(preferences, _NOTIFICATION_PREFERENCES[category])
     ):
-        return
+        return None
 
-    try:
-        send_mail(
-            subject,
-            message,
-            settings.DEFAULT_FROM_EMAIL,
-            [user.email],
-            fail_silently=False,
-        )
-    except (smtplib.SMTPException, OSError) as exc:
-        logger.error(
-            "Email notification delivery failed (user_id=%s, category=%s, error=%s)",
-            user_id,
-            category,
-            type(exc).__name__,
-        )
+    return EmailNotification.objects.create(
+        user_id=user_id,
+        category=category,
+        recipient=user.email,
+        subject=subject,
+        message=message,
+    )
 
 
 def _schedule_notification(user_id, category, subject, message):
