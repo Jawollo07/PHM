@@ -138,8 +138,10 @@ class SubscriptionServiceTests(TestCase):
         self.assertGreater(subscription.next_billing_at, due_time)
         self.assertEqual(subscription.status, Subscription.Status.ACTIVE)
         call_command("process_email_notifications")
-        self.assertEqual(len(mail.outbox), 1)
-        self.assertIn("Aboverlängerung", mail.outbox[0].subject)
+        self.assertEqual(len(mail.outbox), 2)  # initial order confirmation + renewal
+        self.assertEqual(
+            sum("Aboverlängerung" in message.subject for message in mail.outbox), 1
+        )
 
     def test_renewal_is_not_run_before_due_date(self):
         subscription = self.create_paid_subscription()
@@ -184,8 +186,10 @@ class SubscriptionServiceTests(TestCase):
         self.assertEqual(self.wallet.balance_cents, balance_before)
         self.assertIsNotNone(subscription.past_due_since)
         call_command("process_email_notifications")
-        self.assertEqual(len(mail.outbox), 1)
-        self.assertIn("Abozahlung fehlgeschlagen", mail.outbox[0].subject)
+        self.assertEqual(len(mail.outbox), 2)  # initial order confirmation + failed renewal
+        self.assertEqual(
+            sum("Abozahlung fehlgeschlagen" in message.subject for message in mail.outbox), 1
+        )
 
     def test_expiring_subscription_sends_one_service_notification(self):
         from django.core.management import call_command
@@ -209,8 +213,10 @@ class SubscriptionServiceTests(TestCase):
 
         self.assertEqual(ended.status, Subscription.Status.EXPIRED)
         call_command("process_email_notifications")
-        self.assertEqual(len(mail.outbox), 1)
-        self.assertIn("Abonnement beendet", mail.outbox[0].subject)
+        self.assertEqual(len(mail.outbox), 2)  # initial order confirmation + expiry notice
+        self.assertEqual(
+            sum("Abonnement beendet" in message.subject for message in mail.outbox), 1
+        )
 
     def test_customer_can_enable_and_disable_own_auto_renewal(self):
         subscription = self.create_paid_subscription()
