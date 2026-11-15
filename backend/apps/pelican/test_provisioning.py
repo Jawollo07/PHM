@@ -118,20 +118,48 @@ class PelicanServerProvisioningTests(PelicanServerProvisioningFixture, TestCase)
         self.assertEqual(client.payloads[0]["limits"]["io"], 0)
 
     def test_invalid_catalog_configuration_fails_closed_before_server_creation(self):
-        self.item.resource_limits = {
-            **self.item.resource_limits,
+        invalid_resources = {
+            **self.plan.resource_limits,
             "pelican": {
-                **self.item.resource_limits["pelican"],
+                **self.plan.resource_limits["pelican"],
                 "egg_id": True,
             },
         }
-        self.item.save(update_fields=["resource_limits"])
+        invalid_plan = HostingPlan.objects.create(
+            product=self.plan.product,
+            name="Invalid Egg Plan",
+            slug="invalid-egg-plan",
+            price_cents=0,
+            resource_limits=invalid_resources,
+        )
+        order = Order.objects.create(
+            customer=self.customer,
+            status=Order.Status.PAID,
+            total_cents=0,
+            idempotency_key="invalid-egg-order",
+            paid_at=timezone.now(),
+        )
+        item = OrderItem.objects.create(
+            order=order,
+            plan=invalid_plan,
+            product_name="Minecraft",
+            plan_name="Invalid Egg Plan",
+            description="",
+            quantity=1,
+            unit_price_cents=0,
+            setup_fee_cents=0,
+            line_total_cents=0,
+            billing_interval_unit="once",
+            billing_interval_count=1,
+            resource_limits=invalid_resources,
+        )
+        record = enqueue_order_provisioning(order.pk)[0]
         client = FakeProvisioningClient()
 
-        record = sync_pelican_server(self.record.pk, client=client)
+        result = sync_pelican_server(record.pk, client=client)
 
-        self.assertEqual(record.status, PelicanServer.Status.FAILED)
-        self.assertEqual(record.last_error_code, "invalid_egg_id")
+        self.assertEqual(result.status, PelicanServer.Status.FAILED)
+        self.assertEqual(result.last_error_code, "invalid_egg_id")
         self.assertEqual(client.payloads, [])
 
     def test_quantity_creates_one_durable_record_per_server_unit(self):

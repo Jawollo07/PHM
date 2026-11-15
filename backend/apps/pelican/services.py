@@ -105,6 +105,8 @@ def _server_payload(record):
     limits = config["limits"]
     feature_limits = config["feature_limits"]
     environment = config.get("environment", {})
+    docker_image = config["docker_image"]
+    startup = config["startup"]
     required_limits = ("memory", "swap", "disk", "io", "cpu")
     required_features = ("databases", "allocations", "backups")
 

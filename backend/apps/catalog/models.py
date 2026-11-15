@@ -122,6 +122,29 @@ class HostingPlan(models.Model):
             raise ValidationError({
                 "billing_interval_count": "Einmalige Angebote haben genau ein Intervall."
             })
+        if "pelican" in self.resource_limits:
+            from apps.pelican.configuration import (
+                PelicanConfigurationError,
+                validate_pelican_configuration,
+            )
+
+            try:
+                validate_pelican_configuration(self.resource_limits)
+            except PelicanConfigurationError as exc:
+                messages = {
+                    "invalid_egg_id": "Die Pelican-Egg-ID muss eine positive Ganzzahl sein.",
+                    "invalid_allocation_id": "Die Pelican-Allocation-ID muss eine positive Ganzzahl sein.",
+                    "invalid_plan_resources": "Pelican limits, feature_limits und environment müssen JSON-Objekte sein.",
+                    "invalid_resource_limits": "Die Pelican-Ressourcenlimits sind ungültig.",
+                    "invalid_feature_limits": "Die Pelican Feature-Limits sind ungültig.",
+                    "invalid_environment": "Die Pelican-Environment-Werte müssen einfache JSON-Werte sein.",
+                    "invalid_egg_configuration": "Docker-Image und Startup müssen gesetzt sein; Optionen müssen boolesch sein.",
+                }
+                raise ValidationError({
+                    "resource_limits": messages.get(
+                        exc.code, "Die Pelican-Konfiguration ist ungültig."
+                    )
+                }) from None
 
     def __str__(self):
         return f"{self.product.name} – {self.name}"
