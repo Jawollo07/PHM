@@ -270,7 +270,7 @@ class OrderServiceTests(TestCase):
             with connection.cursor() as cursor:
                 cursor.execute(
                     "UPDATE orders SET total_cents = 1 WHERE id = %s",
-                    [str(order.pk)],
+                    [order.pk.hex],
                 )
         with self.assertRaises(DatabaseError), transaction.atomic():
             with connection.cursor() as cursor:
