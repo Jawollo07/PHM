@@ -44,7 +44,7 @@ class FakeProvisioningClient:
         }
 
 
-class PelicanServerProvisioningTests(TestCase):
+class PelicanServerProvisioningFixture:
     def setUp(self):
         self.user = User.objects.create_user(
             username="provision-customer",
@@ -110,6 +110,7 @@ class PelicanServerProvisioningTests(TestCase):
         )
         return order, item
 
+class PelicanServerProvisioningTests(PelicanServerProvisioningFixture, TestCase):
     def test_zero_io_limit_is_accepted_by_pelican(self):
         client = FakeProvisioningClient()
         record = sync_pelican_server(self.record.pk, client=client)
@@ -266,7 +267,7 @@ class FakeAccessSyncClient:
         self.status = None
 
 
-class PelicanServerAccessSyncTests(PelicanServerProvisioningTests):
+class PelicanServerAccessSyncTests(PelicanServerProvisioningFixture, TestCase):
     def setUp(self):
         super().setUp()
         self.record.status = PelicanServer.Status.INSTALLED
