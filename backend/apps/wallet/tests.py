@@ -65,7 +65,7 @@ class WalletModelTests(TestCase):
             with connection.cursor() as cursor:
                 cursor.execute(
                     "UPDATE wallets SET balance_cents = -1 WHERE id = %s",
-                    [str(self.wallet.pk)],
+                    [self.wallet.pk.hex],
                 )
 
     def test_transaction_cannot_be_updated_or_deleted(self):
@@ -103,13 +103,13 @@ class WalletModelTests(TestCase):
             with connection.cursor() as cursor:
                 cursor.execute(
                     "UPDATE wallet_transactions SET description = %s WHERE id = %s",
-                    ["Raw SQL tampering", str(entry.pk)],
+                    ["Raw SQL tampering", entry.pk.hex],
                 )
         with self.assertRaises(DatabaseError), transaction.atomic():
             with connection.cursor() as cursor:
                 cursor.execute(
                     "DELETE FROM wallet_transactions WHERE id = %s",
-                    [str(entry.pk)],
+                    [entry.pk.hex],
                 )
 
 
