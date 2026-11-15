@@ -74,7 +74,7 @@ class PelicanCatalogAdminTests(TestCase):
         response = self.client.get(reverse("admin:catalog_hostingplan_add"))
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Panel-Katalog laden")
-        self.assertContains(response, "pelican_catalog_data_url")
+        self.assertContains(response, "pelican-catalog/data/")
 
     @override_settings(
         PELICAN_PANEL_URL="https://panel.example.com",
