@@ -814,8 +814,8 @@ class ManualWalletAdjustmentAdminTests(TestCase):
             10000,
             description="Multiple hold funding",
             idempotency_key="multiple-hold-funding",
-            signing_key_id=self.key.pk,
-            signer=self.signer,
+            signing_key_id=key.pk,
+            signer=signer,
         )
         first = place_hold(
             self.wallet.pk,
@@ -830,8 +830,8 @@ class ManualWalletAdjustmentAdminTests(TestCase):
 
         entry = capture_hold(
             first.pk,
-            signing_key_id=self.key.pk,
-            signer=self.signer,
+            signing_key_id=key.pk,
+            signer=signer,
         )
         self.wallet.refresh_from_db()
         second.refresh_from_db()
