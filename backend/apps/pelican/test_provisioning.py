@@ -131,12 +131,13 @@ class PelicanServerProvisioningTests(TestCase):
     def test_order_activates_only_after_every_purchased_unit_is_installed(self):
         order, _item = self.make_order(quantity=2, key="two-server-order")
         records = enqueue_order_provisioning(order.pk)
-        first = sync_pelican_server(records[0].pk, client=FakeProvisioningClient(installed=True))
+        client = FakeProvisioningClient(installed=True)
+        first = sync_pelican_server(records[0].pk, client=client)
         self.assertEqual(first.status, PelicanServer.Status.INSTALLED)
         order.refresh_from_db()
         self.assertEqual(order.status, Order.Status.PROVISIONING)
 
-        second = sync_pelican_server(records[1].pk, client=FakeProvisioningClient(installed=True))
+        second = sync_pelican_server(records[1].pk, client=client)
         self.assertEqual(second.status, PelicanServer.Status.INSTALLED)
         order.refresh_from_db()
         self.assertEqual(order.status, Order.Status.ACTIVE)
