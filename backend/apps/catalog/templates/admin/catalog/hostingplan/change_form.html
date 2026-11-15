@@ -1,0 +1,25 @@
+{% extends "admin/change_form.html" %}
+{% load static %}
+
+{% block after_field_sets %}
+  {{ block.super }}
+  <fieldset class="module aligned">
+    <h2>Pelican-Katalog</h2>
+    <div class="form-row">
+      <div>
+        <p>Wähle Node, Nest, Egg und Allocation direkt aus dem verbundenen Pelican-Panel. Die Auswahl übernimmt Egg-Standardwerte und erzeugt die Konfiguration im Ressourcenfeld.</p>
+        <div id="pelican-catalog-helper" data-url="{{ pelican_catalog_data_url }}">
+          <p><button type="button" class="button" id="pelican-load-catalog">Panel-Katalog laden</button></p>
+          <div id="pelican-catalog-controls" hidden>
+            <div class="form-row"><label for="pelican-node">Node</label><select id="pelican-node"><option value="">Node auswählen …</option></select></div>
+            <div class="form-row"><label for="pelican-nest">Nest</label><select id="pelican-nest"><option value="">Nest auswählen …</option></select></div>
+            <div class="form-row"><label for="pelican-egg">Egg</label><select id="pelican-egg"><option value="">Egg auswählen …</option></select></div>
+            <div class="form-row"><label for="pelican-allocation">Allocation</label><select id="pelican-allocation"><option value="">Allocation auswählen …</option></select></div>
+            <p><button type="button" class="button" id="pelican-apply-config" disabled>Auswahl in Ressourcenlimits übernehmen</button></p>
+          </div>
+          <p id="pelican-catalog-status" role="status" aria-live="polite"></p>
+        </div>
+      </div>
+    </div>
+  </fieldset>
+{% endblock %}

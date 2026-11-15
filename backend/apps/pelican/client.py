@@ -162,3 +162,59 @@ class PelicanClient:
         if type(panel_server_id) is not int or panel_server_id < 1:
             raise PelicanAPIError("invalid_server_id")
         self._request("POST", f"servers/{panel_server_id}/unsuspend")
+
+    @staticmethod
+    def _catalog_rows(response):
+        if not isinstance(response, dict) or not isinstance(response.get("data"), list):
+            raise PelicanAPIError("invalid_catalog_response")
+        rows = []
+        for row in response["data"]:
+            attributes = row.get("attributes") if isinstance(row, dict) else None
+            if not isinstance(attributes, dict):
+                raise PelicanAPIError("invalid_catalog_response")
+            rows.append(attributes)
+        return rows
+
+    def _list_catalog(self, path):
+        """Read all pages from a Pelican Application API collection."""
+        rows = []
+        page = 1
+        while page <= 50:
+            separator = "&" if "?" in path else "?"
+            response = self._request("GET", f"{path}{separator}{urlencode({'per_page': 100, 'page': page})}")
+            rows.extend(self._catalog_rows(response))
+            pagination = response.get("meta", {}).get("pagination", {})
+            total_pages = pagination.get("total_pages", page)
+            if type(total_pages) is not int or total_pages < page:
+                raise PelicanAPIError("invalid_catalog_pagination")
+            if page >= total_pages:
+                return rows
+            page += 1
+        raise PelicanAPIError("catalog_too_large")
+
+    @staticmethod
+    def _catalog_id(value, code):
+        if isinstance(value, bool):
+            raise PelicanAPIError(code)
+        try:
+            parsed = int(value)
+        except (TypeError, ValueError):
+            raise PelicanAPIError(code) from None
+        if parsed < 1:
+            raise PelicanAPIError(code)
+        return parsed
+
+    def list_nodes(self):
+        return self._list_catalog("nodes")
+
+    def list_nests(self):
+        return self._list_catalog("nests")
+
+    def list_eggs(self, nest_id):
+        nest_id = self._catalog_id(nest_id, "invalid_nest_id")
+        return self._list_catalog(f"nests/{nest_id}/eggs?include=variables")
+
+    def list_allocations(self, node_id):
+        node_id = self._catalog_id(node_id, "invalid_node_id")
+        rows = self._list_catalog(f"nodes/{node_id}/allocations")
+        return [row for row in rows if not row.get("assigned")]
