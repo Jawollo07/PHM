@@ -64,6 +64,14 @@ def purchase_plan_view(request, plan_id):
         return HttpResponseNotAllowed(["POST"])
 
     try:
+        quantity = int(request.POST.get("quantity", "1"))
+        if quantity < 1 or quantity > 25:
+            raise ValueError
+    except (TypeError, ValueError):
+        messages.error(request, "Bitte wähle eine Menge zwischen 1 und 25.")
+        return redirect("catalog")
+
+    try:
         idempotency_key = str(uuid.UUID(request.POST.get("idempotency_key", "")))
     except (ValueError, TypeError, AttributeError):
         messages.error(request, "Die Bestellanfrage ist ungültig. Bitte lade die Seite neu.")
@@ -92,6 +100,7 @@ def purchase_plan_view(request, plan_id):
             request.user.customer.pk,
             plan_id,
             idempotency_key=idempotency_key,
+            quantity=quantity,
             signing_key_id=signing_key.pk if signing_key else None,
             signer=signer,
         )
