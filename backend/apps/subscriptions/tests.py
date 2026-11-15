@@ -267,9 +267,10 @@ class SubscriptionServiceTests(TestCase):
 
         subscription = self.create_paid_subscription()
         due = timezone.now() - timedelta(days=1)
+        subscription.current_period_start = due - timedelta(days=30)
         subscription.current_period_end = due
         subscription.next_billing_at = due
-        subscription.save(update_fields=["current_period_end", "next_billing_at", "updated_at"])
+        subscription.save(update_fields=["current_period_start", "current_period_end", "next_billing_at", "updated_at"])
 
         call_command("process_subscription_renewals")
         subscription.refresh_from_db()
@@ -289,7 +290,7 @@ class SubscriptionServiceTests(TestCase):
             with connection.cursor() as cursor:
                 cursor.execute(
                     "DELETE FROM subscriptions WHERE id = %s",
-                    [str(subscription.pk)],
+                    [subscription.pk.hex],
                 )
 
     def test_scheduled_cancellation_ends_contract_at_period_end(self):
