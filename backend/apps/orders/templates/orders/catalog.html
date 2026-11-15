@@ -55,6 +55,8 @@
                         <form method="post" action="{% url 'purchase_plan' plan.id %}">
                             {% csrf_token %}
                             <input type="hidden" name="idempotency_key" value="{{ plan.checkout_idempotency_key }}">
+                            <label for="quantity-{{ plan.id }}">Menge</label>
+                            <input id="quantity-{{ plan.id }}" type="number" name="quantity" value="1" min="1" max="25" required>
                             <button type="submit">Jetzt bestellen</button>
                         </form>
                     </article>
