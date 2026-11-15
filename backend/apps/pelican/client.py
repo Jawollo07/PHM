@@ -150,3 +150,15 @@ class PelicanClient:
         if attributes["id"] != panel_server_id:
             raise PelicanAPIError("server_identity_mismatch")
         return attributes
+
+    def suspend_server(self, panel_server_id):
+        """Suspend a server through the Pelican Application API."""
+        if type(panel_server_id) is not int or panel_server_id < 1:
+            raise PelicanAPIError("invalid_server_id")
+        self._request("POST", f"servers/{panel_server_id}/suspend")
+
+    def unsuspend_server(self, panel_server_id):
+        """Unsuspend a server through the Pelican Application API."""
+        if type(panel_server_id) is not int or panel_server_id < 1:
+            raise PelicanAPIError("invalid_server_id")
+        self._request("POST", f"servers/{panel_server_id}/unsuspend")

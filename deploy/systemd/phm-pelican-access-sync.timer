@@ -1,0 +1,12 @@
+[Unit]
+Description=Reconcile PHM Pelican billing state every five minutes
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+Persistent=true
+AccuracySec=30s
+Unit=phm-pelican-access-sync.service
+
+[Install]
+WantedBy=timers.target

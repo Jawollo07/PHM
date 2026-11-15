@@ -273,3 +273,73 @@ def enqueue_order_provisioning(order_id):
                 raise PelicanAPIError("provisioning_record_identity_conflict")
             records.append(record)
     return records
+
+
+
+def _server_should_be_suspended(record, *, now=None):
+    """Derive access from PHM's order and recurring-subscription source of truth."""
+    now = now or timezone.now()
+    order = record.order_item.order
+    if order.status != Order.Status.ACTIVE:
+        return True
+
+    subscription = getattr(record.order_item, "subscription", None)
+    if subscription is None:
+        # One-time purchases remain active for the lifetime of the order.
+        return False
+
+    if subscription.current_period_end <= now:
+        return True
+    return subscription.status != "active"
+
+
+def sync_pelican_server_access(server_record_id, *, client=None, now=None):
+    """Idempotently align Pelican suspension with PHM billing state."""
+    now = now or timezone.now()
+    with transaction.atomic():
+        record = (PelicanServer.objects.select_for_update()
+                  .select_related("order_item__order", "order_item__subscription", "customer")
+                  .get(pk=server_record_id))
+        if record.status != PelicanServer.Status.INSTALLED or not record.panel_server_id:
+            return record, True
+
+        record.attempts += 1
+        record.last_attempt_at = now
+        record.last_error_code = ""
+        record.save(update_fields=["attempts", "last_attempt_at", "last_error_code", "updated_at"])
+
+        should_suspend = _server_should_be_suspended(record, now=now)
+        try:
+            client = client or PelicanClient()
+            remote = client.get_server(record.panel_server_id)
+            remote_id, external_id = _panel_attributes(remote)
+            if remote_id != record.panel_server_id or external_id != record.external_id:
+                raise PelicanAPIError("server_identity_mismatch")
+
+            account = PelicanAccount.objects.get(
+                customer=record.customer, status=PelicanAccount.Status.LINKED
+            )
+            if type(remote.get("user")) is not int or remote["user"] != account.panel_user_id:
+                raise PelicanAPIError("server_owner_mismatch")
+
+            remote_status = remote.get("status")
+            if remote_status is not None and not isinstance(remote_status, str):
+                raise PelicanAPIError("invalid_server_response")
+            remotely_suspended = remote_status == "suspended"
+
+            if should_suspend and not remotely_suspended:
+                client.suspend_server(record.panel_server_id)
+            elif not should_suspend and remotely_suspended:
+                client.unsuspend_server(record.panel_server_id)
+
+            record.last_error_code = ""
+            record.next_retry_at = None
+            record.save(update_fields=["last_error_code", "next_retry_at", "updated_at"])
+        except (PelicanAPIError, PelicanAccount.DoesNotExist) as exc:
+            code = exc.code if isinstance(exc, PelicanAPIError) else "pelican_account_not_linked"
+            record.last_error_code = code[:64]
+            retry_seconds = min(60 * (2 ** min(max(record.attempts - 1, 0), 8)), 21600)
+            record.next_retry_at = now + timedelta(seconds=retry_seconds)
+            record.save(update_fields=["last_error_code", "next_retry_at", "updated_at"])
+
+        return record, should_suspend

@@ -240,3 +240,102 @@ class PelicanServerProvisioningTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, str(self.order.pk))
         self.assertNotContains(response, str(other_order.pk))
+
+
+
+class FakeAccessSyncClient:
+    def __init__(self, external_id, status=None):
+        self.external_id = external_id
+        self.status = status
+        self.calls = []
+
+    def get_server(self, panel_server_id):
+        return {
+            "id": panel_server_id,
+            "external_id": self.external_id,
+            "user": 55,
+            "status": self.status,
+        }
+
+    def suspend_server(self, panel_server_id):
+        self.calls.append(("suspend", panel_server_id))
+        self.status = "suspended"
+
+    def unsuspend_server(self, panel_server_id):
+        self.calls.append(("unsuspend", panel_server_id))
+        self.status = None
+
+
+class PelicanServerAccessSyncTests(PelicanServerProvisioningTests):
+    def setUp(self):
+        super().setUp()
+        self.record.status = PelicanServer.Status.INSTALLED
+        self.record.panel_server_id = 81
+        self.record.save(update_fields=["status", "panel_server_id", "updated_at"])
+        self.client = FakeAccessSyncClient(self.record.external_id)
+
+    def make_order_active(self):
+        self.order.status = Order.Status.PROVISIONING
+        self.order.save(update_fields=["status", "updated_at"])
+        self.order.status = Order.Status.ACTIVE
+        self.order.save(update_fields=["status", "updated_at"])
+
+    def test_active_one_time_order_is_not_suspended(self):
+        from apps.pelican.services import sync_pelican_server_access
+
+        self.make_order_active()
+        result, should_suspend = sync_pelican_server_access(self.record.pk, client=self.client)
+        self.assertFalse(should_suspend)
+        self.assertEqual(self.client.calls, [])
+        self.assertEqual(result.last_error_code, "")
+
+    def test_non_active_order_is_suspended(self):
+        from apps.pelican.services import sync_pelican_server_access
+
+        result, should_suspend = sync_pelican_server_access(self.record.pk, client=self.client)
+        self.assertTrue(should_suspend)
+        self.assertEqual(self.client.calls, [("suspend", 81)])
+        self.assertEqual(result.last_error_code, "")
+
+    def test_already_suspended_server_is_not_toggled_again(self):
+        from apps.pelican.services import sync_pelican_server_access
+
+        self.client.status = "suspended"
+        sync_pelican_server_access(self.record.pk, client=self.client)
+        self.assertEqual(self.client.calls, [])
+
+    def test_suspended_remote_server_is_unsuspended_for_active_order(self):
+        from apps.pelican.services import sync_pelican_server_access
+
+        self.make_order_active()
+        self.client.status = "suspended"
+        sync_pelican_server_access(self.record.pk, client=self.client)
+        self.assertEqual(self.client.calls, [("unsuspend", 81)])
+
+    def test_remote_owner_mismatch_is_recorded_and_retried(self):
+        from apps.pelican.services import sync_pelican_server_access
+
+        class WrongOwner(FakeAccessSyncClient):
+            def get_server(self, panel_server_id):
+                result = super().get_server(panel_server_id)
+                result["user"] = 999
+                return result
+
+        self.make_order_active()
+        wrong = WrongOwner(self.record.external_id)
+        result, _should_suspend = sync_pelican_server_access(self.record.pk, client=wrong)
+        self.assertEqual(result.last_error_code, "server_owner_mismatch")
+        self.assertIsNotNone(result.next_retry_at)
+
+    def test_api_failure_is_scheduled_for_retry(self):
+        from apps.pelican.client import PelicanAPIError
+        from apps.pelican.services import sync_pelican_server_access
+
+        class BrokenClient(FakeAccessSyncClient):
+            def get_server(self, panel_server_id):
+                raise PelicanAPIError("http_503")
+
+        broken = BrokenClient(self.record.external_id)
+        result, _should_suspend = sync_pelican_server_access(self.record.pk, client=broken)
+        self.assertEqual(result.last_error_code, "http_503")
+        self.assertIsNotNone(result.next_retry_at)
